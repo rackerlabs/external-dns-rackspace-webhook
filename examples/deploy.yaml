@@ -6,9 +6,8 @@ metadata:
   namespace: external-dns
 type: Opaque
 stringData:
-  username: "cert-manager-webhook-rackspace"
-  api-key: "key-here"
-  tenant-id: "your-rackspace-tenant-id"  # optional
+  username: "your-username"
+  api-key: "your-api-key"
 
 ---
 # ServiceAccount for external-dns
@@ -125,11 +124,11 @@ spec:
           - --namespace=external-dns
           - --interval=1m
           - --provider=webhook
-          - --webhook-provider-url=http://192.168.1.16:8888
+          - --webhook-provider-url=http://localhost:8888
           - --policy=upsert-only
           - --log-level=debug
-          - --domain-filter=dev.undercloud.rackspace.net
-          # - --dry-run
+          - --registry=noop
+          - --domain-filter=example.com
         ports:
         - name: http
           protocol: TCP
@@ -197,15 +196,9 @@ spec:
             secretKeyRef:
               name: external-dns-rackspace-webhook
               key: api-key
-        - name: RACKSPACE_TENANT_ID
-          valueFrom:
-            secretKeyRef:
-              name: external-dns-rackspace-webhook
-              key: tenant-id
-              optional: true
         - name: DOMAIN_FILTER
-          value: "dev.undercloud.rackspace.ne"  # Replace with your domain(s), comma-separated
-        # - name: LOG_LEVEL
-        #   value: "debug"
+          value: "example.com"  # Replace with your domain(s), comma-separated
+        - name: LOG_LEVEL
+          value: "info"
         - name: DRY_RUN
           value: "false"

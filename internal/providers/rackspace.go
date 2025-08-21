@@ -146,31 +146,69 @@ func (p *RackspaceProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 	return nil
 }
 
-func (p *RackspaceProvider) createRecord(ctx context.Context, endpoint *endpoint.Endpoint) error {
-	domain, err := p.findDomain(ctx, endpoint.DNSName)
+func convertRecordToEndpoint(record records.RecordList, domainName string) *endpoint.Endpoint {
+	if record.Type == "NS" || record.Type == "SOA" {
+		return nil
+	}
+
+	domainName = strings.TrimSuffix(strings.ToLower(domainName), ".")
+	recordName := strings.TrimSuffix(strings.ToLower(record.Name), ".")
+
+	var dnsName string
+	if recordName == "" || recordName == domainName {
+		dnsName = domainName + "."
+	} else if strings.HasSuffix(recordName, "."+domainName) {
+		dnsName = recordName + "."
+	} else {
+		dnsName = recordName + "." + domainName + "."
+	}
+
+	// Normalize TXT data (Rackspace often stores without quotes)
+	data := record.Data
+	if record.Type == "TXT" {
+		data = strings.Trim(data, `"`)
+		data = fmt.Sprintf(`"%s"`, data)
+	}
+
+	ep := &endpoint.Endpoint{
+		DNSName:          dnsName,
+		RecordType:       record.Type,
+		Targets:          []string{data},
+		ProviderSpecific: nil,
+	}
+
+	if record.TTL != 0 {
+		ep.RecordTTL = endpoint.TTL(record.TTL)
+	} else {
+		ep.RecordTTL = endpoint.TTL(300) // default to 300s if API didn’t return
+	}
+
+	return ep
+}
+
+func (p *RackspaceProvider) createRecord(ctx context.Context, ep *endpoint.Endpoint) error {
+	domain, err := p.findDomain(ctx, ep.DNSName)
 	if err != nil {
 		return err
 	}
-	recordName := getRecordName(endpoint.DNSName, domain.Name)
-	for _, target := range endpoint.Targets {
+	fqdn := strings.TrimSuffix(strings.ToLower(ep.DNSName), ".")
+	for _, target := range ep.Targets {
 		createOpts := records.CreateOpts{
-			Name: recordName + "." + domain.Name,
-			Type: endpoint.RecordType,
+			Name: fqdn,
+			Type: ep.RecordType,
 			Data: target,
 		}
-		if endpoint.RecordTTL.IsConfigured() {
-			ttl := uint(endpoint.RecordTTL)
+		if ep.RecordTTL.IsConfigured() {
+			ttl := uint(ep.RecordTTL)
 			if ttl < 300 {
-				ttl = 300 // Rackspace minimum TTL
+				ttl = 300
 			}
 			createOpts.TTL = ttl
 		}
-
-		_, err = records.Create(ctx, p.Client, domain.ID, createOpts).Extract()
-		if err != nil {
-			return fmt.Errorf("failed to create record %s: %v", endpoint.DNSName, err)
+		if _, err := records.Create(ctx, p.Client, domain.ID, createOpts).Extract(); err != nil {
+			return fmt.Errorf("failed to create record %s: %v", ep.DNSName, err)
 		}
-		log.Info("Created record", "dnsName", endpoint.DNSName, "type", endpoint.RecordType, "target", target)
+		log.Info("Created record", "dnsName", ep.DNSName, "type", ep.RecordType, "target", target)
 	}
 	return nil
 }
@@ -197,34 +235,33 @@ func (p *RackspaceProvider) deleteRecord(ctx context.Context, endpoint *endpoint
 }
 
 func (p *RackspaceProvider) deleteRecordByName(ctx context.Context, domain *domains.DomainList, dnsName, recordType string) error {
-	recordName := getRecordName(dnsName, domain.Name)
+	wantName := strings.TrimSuffix(strings.ToLower(dnsName), ".")
 	pager := records.List(ctx, p.Client, domain.ID, records.ListOpts{})
 
-	var errors []error
+	var errs []error
 	err := pager.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
 		recordList, err := records.ExtractRecords(page)
 		if err != nil {
 			return false, err
 		}
 
-		for _, record := range recordList {
-			if record.Name == recordName+"."+domain.Name+"." && record.Type == recordType {
-				err = records.Delete(ctx, p.Client, domain.ID, record.ID).ExtractErr()
-				if err != nil {
-					errors = append(errors, fmt.Errorf("failed to delete record %s: %v", record.Name, err))
+		for _, rec := range recordList {
+			gotName := strings.TrimSuffix(strings.ToLower(rec.Name), ".")
+			if gotName == wantName && strings.EqualFold(rec.Type, recordType) {
+				if e := records.Delete(ctx, p.Client, domain.ID, rec.ID).ExtractErr(); e != nil {
+					errs = append(errs, fmt.Errorf("failed to delete record %s: %v", rec.Name, e))
 				} else {
-					log.Info("Deleted record", "dnsName", record.Name, "type", recordType)
+					log.Info("Deleted record", "dnsName", rec.Name, "type", recordType)
 				}
 			}
 		}
 		return true, nil
 	})
-
-	if len(errors) > 0 {
-		return fmt.Errorf("errors during deletion: %v", errors)
-	}
 	if err != nil {
 		return fmt.Errorf("failed to list records: %v", err)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("errors during deletion: %v", errs)
 	}
 	return nil
 }
@@ -257,47 +294,4 @@ func (p *RackspaceProvider) findDomain(ctx context.Context, dnsName string) (*do
 		return nil, fmt.Errorf("no matching domain found for %s", dnsName)
 	}
 	return bestMatch, nil
-}
-
-func convertRecordToEndpoint(record records.RecordList, domainName string) *endpoint.Endpoint {
-	if record.Type == "NS" || record.Type == "SOA" {
-		return nil
-	}
-
-	domainName = strings.TrimSuffix(domainName, ".")
-	recordName := strings.TrimSuffix(record.Name, ".")
-
-	var dnsName string
-	if recordName == "" || recordName == domainName {
-		dnsName = domainName + "."
-	} else if strings.HasSuffix(recordName, "."+domainName) {
-		dnsName = recordName + "."
-	} else {
-		dnsName = recordName + "." + domainName + "."
-	}
-
-	ep := &endpoint.Endpoint{
-		DNSName:    dnsName,
-		RecordType: record.Type,
-		Targets:    []string{record.Data},
-	}
-	if record.TTL != 0 {
-		ep.RecordTTL = endpoint.TTL(record.TTL)
-	}
-
-	return ep
-}
-
-// Records retrieves all DNS records from Rackspace Cloud DNS
-
-func getRecordName(dnsName, domainName string) string {
-	dnsName = strings.TrimSuffix(strings.ToLower(dnsName), ".")
-	domainName = strings.TrimSuffix(strings.ToLower(domainName), ".")
-	if dnsName == domainName {
-		return "@"
-	}
-	if strings.HasSuffix(dnsName, "."+domainName) {
-		return strings.TrimSuffix(dnsName, "."+domainName)
-	}
-	return dnsName
 }

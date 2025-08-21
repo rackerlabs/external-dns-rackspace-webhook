@@ -49,7 +49,6 @@ func loadConfig() *providers.RackspaceConfig {
 	config := &providers.RackspaceConfig{
 		Username:         os.Getenv("RACKSPACE_USERNAME"),
 		APIKey:           os.Getenv("RACKSPACE_API_KEY"),
-		TenantID:         os.Getenv("RACKSPACE_TENANT_ID"),
 		IdentityEndpoint: "https://identity.api.rackspacecloud.com/v2.0/",
 		DryRun:           false,
 		LogLevel:         "info",

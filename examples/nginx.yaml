@@ -31,7 +31,7 @@ kind: Service
 metadata:
   name: nginx
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: nginx-demo.uc-dev-abhi1589.dev.undercloud.rackspace.net
+    external-dns.alpha.kubernetes.io/hostname: example.com
     external-dns.alpha.kubernetes.io/ttl: "120" #optional
 spec:
   selector:
@@ -48,12 +48,12 @@ metadata:
   name: nginx-ext-ingress
   namespace: external-dns
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: "nginx-demo.uc-dev-abhi1589.dev.undercloud.rackspace.net"
+    external-dns.alpha.kubernetes.io/hostname: "example.com"
     external-dns.alpha.kubernetes.io/target: "198.19.249.2"
 spec:
   ingressClassName: nginx
   rules:
-    - host: nginx-demo.uc-dev-abhi1589.dev.undercloud.rackspace.net
+    - host: example.com
       http:
         paths:
           - path: /

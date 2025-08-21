@@ -8,7 +8,6 @@ import (
 func ConfigureRoutes(e *echo.Echo, h *handlers.Handler) {
 	// Health check endpoint
 	e.GET("/healthz", h.HealthHandler)
-
 	// Domain filter negotiation endpoint
 	e.GET("/", h.NegotiationHandler)
 	// Get all DNS records

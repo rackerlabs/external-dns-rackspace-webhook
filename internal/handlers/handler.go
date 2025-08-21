@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
-	"io"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -41,65 +41,76 @@ func (h *Handler) HandleGetRecords(c echo.Context) error {
 
 func (h *Handler) HandleAdjustEndpoints(c echo.Context) error {
 	var endpoints []*endpoint.Endpoint
-	b, err := io.ReadAll(c.Request().Body)
-	if err != nil {
+
+	if err := json.NewDecoder(c.Request().Body).Decode(&endpoints); err != nil {
 		log.Error("Failed to decode input", "error", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Failed to decode input"})
 	}
-	if err := json.Unmarshal(b, &endpoints); err != nil {
-		log.Error("Failed to decode endpoints", "error", err)
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Failed to decode endpoints"})
-	}
+
 	log.Debug("Adjusting endpoints", "count", len(endpoints))
 	adjusted := make([]*endpoint.Endpoint, 0, len(endpoints))
+
 	for _, ep := range endpoints {
 		if ep == nil || ep.DNSName == "" || len(ep.Targets) == 0 {
 			log.Warn("Skipping invalid endpoint", "dnsName", ep.DNSName)
 			continue
 		}
 
-		dnsName := strings.ToLower(strings.TrimSuffix(ep.DNSName, ".") + ".")
+		// Canonicalize DNS name
+		dnsName := strings.ToLower(strings.TrimSuffix(ep.DNSName, ".")) + "."
 		if !h.provider.DomainFilter.Match(dnsName) {
 			log.Warn("Endpoint outside domain filter", "dnsName", dnsName)
 			continue
 		}
 
+		// Skip unsupported record types
 		if ep.RecordType == "NS" || ep.RecordType == "SOA" {
 			log.Warn("Skipping unsupported record type", "dnsName", dnsName, "recordType", ep.RecordType)
 			continue
 		}
 
+		// Normalize TTL: ensure it’s at least 300, default 300 if not set
 		ttl := ep.RecordTTL
-		if ttl.IsConfigured() && ttl < 300 {
+		if !ttl.IsConfigured() {
+			ttl = endpoint.TTL(300)
+		} else if ttl < 300 {
 			log.Debug("Adjusting TTL to 300s", "dnsName", dnsName, "originalTTL", ttl)
-			ttl = 300
+			ttl = endpoint.TTL(300)
+		}
+
+		// Normalize TXT targets (Rackspace may return them already quoted)
+		targets := make([]string, 0, len(ep.Targets))
+		for _, t := range ep.Targets {
+			if ep.RecordType == "TXT" {
+				t = strings.Trim(t, `"`)
+				t = fmt.Sprintf(`"%s"`, t)
+			}
+			targets = append(targets, t)
 		}
 
 		adjusted = append(adjusted, &endpoint.Endpoint{
 			DNSName:          dnsName,
-			Targets:          ep.Targets,
+			Targets:          targets,
 			RecordType:       ep.RecordType,
 			RecordTTL:        ttl,
-			ProviderSpecific: ep.ProviderSpecific,
+			Labels:           ep.Labels,
+			ProviderSpecific: nil,
 		})
 	}
 
-	c.Response().Header().Set(echo.HeaderContentType, "application/external.dns.webhook+json;version=1")
+	c.Response().Header().Set(
+		echo.HeaderContentType,
+		"application/external.dns.webhook+json;version=1",
+	)
 	return c.JSON(http.StatusOK, adjusted)
 }
 
 func (h *Handler) HandlePostRecords(c echo.Context) error {
 	var changes plan.Changes
-	b, err := io.ReadAll(c.Request().Body)
-	if err != nil {
+	if err := json.NewDecoder(c.Request().Body).Decode(&changes); err != nil {
 		log.Error("Failed to decode input", "error", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Failed to decode input"})
 	}
-	if err := json.Unmarshal(b, &changes); err != nil {
-		log.Error("Failed to decode endpoints", "error", err)
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Failed to decode endpoints"})
-	}
-
 	if err := h.provider.ApplyChanges(c.Request().Context(), &changes); err != nil {
 		log.Error("Failed to apply changes", "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to apply changes"})
