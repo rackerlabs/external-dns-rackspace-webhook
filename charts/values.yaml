@@ -1,0 +1,101 @@
+# values.yaml
+# Global values
+namespace: external-dns # Shared values between secrets and deployment
+domainFilter: example.com  # Shared domain filter for both external-dns and webhook
+
+# External DNS configuration
+externalDns:
+  enabled: true
+  image:
+    repository: registry.k8s.io/external-dns/external-dns
+    tag: v0.18.0
+    pullPolicy: IfNotPresent
+  replicas: 1
+  serviceAccount:
+    create: true
+    name: external-dns
+  rbac:
+    create: true
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 7979
+  args:
+    - --source=service
+    - --source=ingress
+    - --interval=5m
+    - --provider=webhook
+    - --webhook-provider-url=http://localhost:8888
+    - --policy=upsert-only
+    - --log-level=debug
+    - --registry=noop
+  securityContext:
+    fsGroup: 65534
+  containerSecurityContext:
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65534
+  livenessProbe:
+    failureThreshold: 2
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 5
+  readinessProbe:
+    failureThreshold: 6
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 5
+  resources: {} 
+
+# Rackspace Webhook configuration
+rackspaceWebhook:
+  enabled: true
+  image:
+    repository: ghcr.io/rackerlabs/external-dns-rackspace-webhook
+    tag: latest
+    pullPolicy: IfNotPresent 
+  secret:
+    create: true
+    name: external-dns-rackspace-webhook
+    username: ""  # Provide your Rackspace username here
+    apiKey: ""    # Provide your Rackspace API key here
+  env:
+    LOG_LEVEL: info
+    DRY_RUN: "false"
+  containerSecurityContext:
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65534
+  livenessProbe:
+    failureThreshold: 2
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 5
+  readinessProbe:
+    failureThreshold: 6
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 5
+  resources: {}

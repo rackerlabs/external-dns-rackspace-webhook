@@ -1,0 +1,11 @@
+Thank you for installing {{ .Chart.Name }}!
+
+1. Provide Rackspace credentials:
+   helm upgrade --install external-dns ./external-dns \
+     --create-namespace -n {{ .Values.namespace }} \
+     --set-string secret.username="YOUR_USERNAME" \
+     --set-string secret.apiKey="YOUR_API_KEY"
+
+2. Verify:
+   helm status external-dns -n {{ .Values.namespace }}
+   kubectl get pods -n {{ .Values.namespace }}

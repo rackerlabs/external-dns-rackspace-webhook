@@ -1,0 +1,80 @@
+# templates/deployment.yaml
+{{- if .Values.externalDns.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-external-dns
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "external-dns-rackspace.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.externalDns.replicas }}
+  selector:
+    matchLabels:
+      {{- include "external-dns-rackspace.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "external-dns-rackspace.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.externalDns.serviceAccount.name }}
+      securityContext:
+        {{- toYaml .Values.externalDns.securityContext | nindent 8 }}
+      containers:
+      - name: external-dns
+        securityContext:
+          {{- toYaml .Values.externalDns.containerSecurityContext | nindent 10 }}
+        image: "{{ .Values.externalDns.image.repository }}:{{ .Values.externalDns.image.tag }}"
+        imagePullPolicy: {{ .Values.externalDns.image.pullPolicy }}
+        args:
+          - --domain-filter={{ .Values.domainFilter }}
+          {{- range .Values.externalDns.args }}
+          - {{ . | quote }}
+          {{- end }}
+        ports:
+        - name: http
+          protocol: TCP
+          containerPort: 7979
+        livenessProbe:
+          {{- toYaml .Values.externalDns.livenessProbe | nindent 10 }}
+        readinessProbe:
+          {{- toYaml .Values.externalDns.readinessProbe | nindent 10 }}
+        resources:
+          {{- toYaml .Values.externalDns.resources | nindent 10 }}
+      {{- if .Values.rackspaceWebhook.enabled }}
+      - name: rackspace-webhook
+        securityContext:
+          {{- toYaml .Values.rackspaceWebhook.containerSecurityContext | nindent 10 }}
+        image: "{{ .Values.rackspaceWebhook.image.repository }}:{{ .Values.rackspaceWebhook.image.tag }}"
+        imagePullPolicy: {{ .Values.rackspaceWebhook.image.pullPolicy }}
+        ports:
+        - name: http
+          protocol: TCP
+          containerPort: 8888
+        livenessProbe:
+          {{- toYaml .Values.rackspaceWebhook.livenessProbe | nindent 10 }}
+        readinessProbe:
+          {{- toYaml .Values.rackspaceWebhook.readinessProbe | nindent 10 }}
+        env:
+        - name: DOMAIN_FILTER
+          value: {{ .Values.domainFilter | quote }}
+        - name: RACKSPACE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.rackspaceWebhook.secret.name }}
+              key: username
+        - name: RACKSPACE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.rackspaceWebhook.secret.name }}
+              key: api-key
+        {{- range $key, $value := .Values.rackspaceWebhook.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.rackspaceWebhook.resources | nindent 10 }}
+      {{- end }}
+{{- end }}
