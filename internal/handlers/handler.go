@@ -25,17 +25,15 @@ func NewHandler(rackspaceProvider *providers.RackspaceProvider) *Handler {
 }
 
 func (h *Handler) NegotiationHandler(c echo.Context) error {
-	c.Response().Header().Set(echo.HeaderContentType, "application/external.dns.webhook+json;version=1")
 	return c.JSON(http.StatusOK, h.provider.DomainFilter)
 }
 
 func (h *Handler) HandleGetRecords(c echo.Context) error {
 	endpoints, err := h.provider.Records(c.Request().Context())
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch records"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	c.Response().Header().Set(echo.HeaderContentType, "application/external.dns.webhook+json;version=1")
 	return c.JSON(http.StatusOK, endpoints)
 }
 
@@ -44,7 +42,7 @@ func (h *Handler) HandleAdjustEndpoints(c echo.Context) error {
 
 	if err := json.NewDecoder(c.Request().Body).Decode(&endpoints); err != nil {
 		log.Error("Failed to decode input", "error", err)
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Failed to decode input"})
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
 	log.Debug("Adjusting endpoints", "count", len(endpoints))
@@ -98,10 +96,6 @@ func (h *Handler) HandleAdjustEndpoints(c echo.Context) error {
 		})
 	}
 
-	c.Response().Header().Set(
-		echo.HeaderContentType,
-		"application/external.dns.webhook+json;version=1",
-	)
 	return c.JSON(http.StatusOK, adjusted)
 }
 
@@ -109,11 +103,11 @@ func (h *Handler) HandlePostRecords(c echo.Context) error {
 	var changes plan.Changes
 	if err := json.NewDecoder(c.Request().Body).Decode(&changes); err != nil {
 		log.Error("Failed to decode input", "error", err)
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Failed to decode input"})
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	if err := h.provider.ApplyChanges(c.Request().Context(), &changes); err != nil {
 		log.Error("Failed to apply changes", "error", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to apply changes"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	return c.NoContent(http.StatusNoContent)
