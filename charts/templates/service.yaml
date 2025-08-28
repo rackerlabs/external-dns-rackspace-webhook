@@ -1,0 +1,19 @@
+# templates/service.yaml
+{{- if and .Values.externalDns.enabled .Values.externalDns.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-external-dns
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "external-dns-rackspace.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.externalDns.service.type }}
+  selector:
+    {{- include "external-dns-rackspace.selectorLabels" . | nindent 4 }}
+  ports:
+  - name: http
+    port: {{ .Values.externalDns.service.port }}
+    targetPort: http
+    protocol: TCP
+{{- end }}

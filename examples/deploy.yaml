@@ -161,7 +161,7 @@ spec:
           readOnlyRootFilesystem: true
           runAsNonRoot: true
           runAsUser: 65534
-        image: harbor.core.ord.pvceng.rax.io/abhi1589/test:latest
+        image: ghcr.io/rackerlabs/external-dns-rackspace-webhook:latest
         imagePullPolicy: Never
         ports:
         - name: http
