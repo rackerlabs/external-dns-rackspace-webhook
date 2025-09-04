@@ -33,7 +33,7 @@ func main() {
 
 	port, err := getStartPort()
 	if err != nil {
-		log.Fatalf("invalid port", err)
+		log.Fatalf("invalid port %s", err)
 	}
 
 	if err = e.Start(fmt.Sprintf(":%d", port)); err != nil {
