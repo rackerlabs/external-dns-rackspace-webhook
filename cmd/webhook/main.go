@@ -14,7 +14,10 @@ import (
 	"github.com/rackerlabs/external-dns-rackspace-webhook/internal/routes"
 )
 
-const defaultPort = 8888
+const (
+	defaultPort             = 8888
+	defaultIdentityEndpoint = "https://identity.api.rackspacecloud.com/v2.0/"
+)
 
 func main() {
 	config := loadConfig()
@@ -28,28 +31,33 @@ func main() {
 	e.HideBanner = true
 	routes.ConfigureRoutes(e, handler)
 
-	if err = e.Start(fmt.Sprintf(":%d", getStartPort())); err != nil {
+	port, err := getStartPort()
+	if err != nil {
+		log.Fatalf("invalid port %s", err)
+	}
+
+	if err = e.Start(fmt.Sprintf(":%d", port)); err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}
 }
 
-func getStartPort() int {
+func getStartPort() (int, error) {
 	portStr := os.Getenv("PORT")
 	if portStr == "" {
-		return defaultPort
+		return defaultPort, nil
 	}
 	port, err := strconv.Atoi(portStr)
-	if err != nil || port <= 0 {
-		return defaultPort
+	if err != nil {
+		return 0, fmt.Errorf("invalid port %s", err.Error())
 	}
-	return port
+	return port, nil
 }
 
 func loadConfig() *providers.RackspaceConfig {
 	config := &providers.RackspaceConfig{
 		Username:         os.Getenv("RACKSPACE_USERNAME"),
 		APIKey:           os.Getenv("RACKSPACE_API_KEY"),
-		IdentityEndpoint: "https://identity.api.rackspacecloud.com/v2.0/",
+		IdentityEndpoint: os.Getenv("RACKSPACE_IDENTITY_ENDPOINT"),
 		DryRun:           false,
 		LogLevel:         "info",
 	}
@@ -64,6 +72,10 @@ func loadConfig() *providers.RackspaceConfig {
 
 	if logLevel := os.Getenv("LOG_LEVEL"); logLevel != "" {
 		config.LogLevel = logLevel
+	}
+
+	if config.IdentityEndpoint == "" {
+		config.IdentityEndpoint = defaultIdentityEndpoint
 	}
 
 	// Validate required fields

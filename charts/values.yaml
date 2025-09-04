@@ -73,6 +73,7 @@ rackspaceWebhook:
   env:
     LOG_LEVEL: info
     DRY_RUN: "false"
+    RACKSPACE_IDENTITY_ENDPOINT: "https://identity.api.rackspacecloud.com/v2.0/"
   containerSecurityContext:
     capabilities:
       drop:
