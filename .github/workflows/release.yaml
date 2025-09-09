@@ -74,11 +74,11 @@ jobs:
           sed -i \
             -e "s/^appVersion:.*/appVersion: ${PKG_VER}/" \
             -e "s/^version:.*/version: ${PKG_VER}/" \
-            charts/external-dns-rackspace-webhook/Chart.yaml
+            charts/Chart.yaml
 
           # package chart
-          helm package -u -d . charts/external-dns-rackspace-webhook
+          helm package -u -d ${{ github.workspace }} charts
 
           # push chart to ghcr.io
-          helm push external-dns-rackspace-webhook-${PKG_VER}.tgz \
+          helm push ${{ github.workspace }}/external-dns-rackspace-${PKG_VER}.tgz \
             oci://ghcr.io/${GITHUB_REPOSITORY_OWNER}/charts
