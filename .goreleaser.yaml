@@ -48,7 +48,6 @@ dockers:
     dockerfile: .goreleaser.Dockerfile
     image_templates:
       - ghcr.io/rackerlabs/{{ .ProjectName }}:{{ .Version }}-amd64
-      - docker.io/rackerlabs/{{ .ProjectName }}:{{ .Version }}-amd64
     build_flag_templates:
       - --platform=linux/arm64
       - --label=org.opencontainers.image.version={{ .Version }}
@@ -67,7 +66,6 @@ dockers:
     dockerfile: .goreleaser.Dockerfile
     image_templates:
       - ghcr.io/rackerlabs/{{ .ProjectName }}:{{ .Version }}-arm64
-      - docker.io/rackerlabs/{{ .ProjectName }}:{{ .Version }}-arm64
     build_flag_templates:
       - --platform=linux/arm64
       - --label=org.opencontainers.image.version={{ .Version }}
