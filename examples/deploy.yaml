@@ -162,7 +162,7 @@ spec:
           runAsNonRoot: true
           runAsUser: 65534
         image: ghcr.io/rackerlabs/external-dns-rackspace-webhook:latest
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         ports:
         - name: http
           protocol: TCP
