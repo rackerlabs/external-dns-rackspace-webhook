@@ -1,26 +1,38 @@
-# values.yaml
 # Global values
-namespace: external-dns # Shared values between secrets and deployment
-domainFilter: example.com  # Shared domain filter for both external-dns and webhook
+# -- Kubernetes namespace for deployment
+namespace: external-dns
+# -- Domain filter for DNS management (comma-separated for multiple domains)
+domainFilter: example.com
 
 # External DNS configuration
 externalDns:
+  # -- Enable external-dns deployment
   enabled: true
   image:
+    # -- External DNS container image repository
     repository: registry.k8s.io/external-dns/external-dns
-    # -- defaults to the Chart's AppVersion which should match the External DNS release
+    # -- External DNS container image tag (defaults to Chart's AppVersion)
     tag: ""
+    # -- Image pull policy
     pullPolicy: IfNotPresent
+  # -- Number of external-dns replicas
   replicas: 1
   serviceAccount:
+    # -- Create service account for external-dns
     create: true
+    # -- Service account name
     name: external-dns
   rbac:
+    # -- Create RBAC resources for external-dns
     create: true
   service:
+    # -- Enable service creation
     enabled: true
+    # -- Kubernetes service type
     type: ClusterIP
+    # -- Service port number
     port: 7979
+  # -- External DNS command arguments
   args:
     - --source=service
     - --source=ingress
@@ -30,8 +42,10 @@ externalDns:
     - --policy=upsert-only
     - --log-level=info
     - --registry=noop
+  # -- Pod security context for external-dns
   securityContext:
     fsGroup: 65534
+  # -- Container security context for external-dns
   containerSecurityContext:
     capabilities:
       drop:
@@ -39,6 +53,7 @@ externalDns:
     readOnlyRootFilesystem: true
     runAsNonRoot: true
     runAsUser: 65534
+  # -- Liveness probe configuration for external-dns
   livenessProbe:
     failureThreshold: 2
     httpGet:
@@ -48,6 +63,7 @@ externalDns:
     periodSeconds: 10
     successThreshold: 1
     timeoutSeconds: 5
+  # -- Readiness probe configuration for external-dns
   readinessProbe:
     failureThreshold: 6
     httpGet:
@@ -57,25 +73,38 @@ externalDns:
     periodSeconds: 10
     successThreshold: 1
     timeoutSeconds: 5
-  resources: {} 
+  # -- Resource limits and requests for external-dns
+  resources: {}
 
 # Rackspace Webhook configuration
 rackspaceWebhook:
+  # -- Enable Rackspace webhook deployment
   enabled: true
   image:
+    # -- Rackspace webhook container image repository
     repository: ghcr.io/rackerlabs/external-dns-rackspace-webhook
-    # -- defaults to the Chart version which matches the container version
+    # -- Rackspace webhook container image tag (defaults to Chart version)
     tag: ""
-    pullPolicy: IfNotPresent 
+    # -- Image pull policy
+    pullPolicy: IfNotPresent
   secret:
+    # -- Create secret for Rackspace credentials
     create: true
+    # -- Secret name for Rackspace credentials
     name: external-dns-rackspace-webhook
-    username: ""  # Provide your Rackspace username here
-    apiKey: ""    # Provide your Rackspace API key here
+    # -- Rackspace username (required for authentication)
+    username: ""
+    # -- Rackspace API key (required for authentication)
+    apiKey: ""
+  # -- Environment variables for the Rackspace webhook
   env:
+    # -- Logging level (debug, info, warn, error)
     LOG_LEVEL: info
+    # -- Enable dry-run mode (true/false)
     DRY_RUN: "false"
+    # -- Rackspace Identity API endpoint URL
     RACKSPACE_IDENTITY_ENDPOINT: "https://identity.api.rackspacecloud.com/v2.0/"
+  # -- Container security context for Rackspace webhook
   containerSecurityContext:
     capabilities:
       drop:
@@ -83,6 +112,7 @@ rackspaceWebhook:
     readOnlyRootFilesystem: true
     runAsNonRoot: true
     runAsUser: 65534
+  # -- Liveness probe configuration for Rackspace webhook
   livenessProbe:
     failureThreshold: 2
     httpGet:
@@ -92,6 +122,7 @@ rackspaceWebhook:
     periodSeconds: 10
     successThreshold: 1
     timeoutSeconds: 5
+  # -- Readiness probe configuration for Rackspace webhook
   readinessProbe:
     failureThreshold: 6
     httpGet:
@@ -101,4 +132,5 @@ rackspaceWebhook:
     periodSeconds: 10
     successThreshold: 1
     timeoutSeconds: 5
+  # -- Resource limits and requests for Rackspace webhook
   resources: {}
