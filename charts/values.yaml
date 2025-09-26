@@ -23,11 +23,11 @@ externalDns:
   args:
     - --source=service
     - --source=ingress
-    - --interval=5m
+    - --interval=10m
     - --provider=webhook
     - --webhook-provider-url=http://localhost:8888
     - --policy=upsert-only
-    - --log-level=debug
+    - --log-level=info
     - --registry=noop
   securityContext:
     fsGroup: 65534
