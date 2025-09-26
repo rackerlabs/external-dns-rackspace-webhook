@@ -47,7 +47,7 @@ spec:
       - name: rackspace-webhook
         securityContext:
           {{- toYaml .Values.rackspaceWebhook.containerSecurityContext | nindent 10 }}
-        image: "{{ .Values.rackspaceWebhook.image.repository }}:{{ .Values.rackspaceWebhook.image.tag | default (printf "v%s" .Chart.Version) }}"
+        image: "{{ .Values.rackspaceWebhook.image.repository }}:{{ .Values.rackspaceWebhook.image.tag | default (printf "%s" .Chart.Version) }}"
         imagePullPolicy: {{ .Values.rackspaceWebhook.image.pullPolicy }}
         ports:
         - name: http
