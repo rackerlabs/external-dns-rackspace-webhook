@@ -77,7 +77,9 @@ jobs:
             -e "s/^version:.*/version: ${PKG_VER}/" \
             charts/Chart.yaml
 
-          sed -i "s/^\([[:space:]]*tag:\).*/\1 ${PKG_VER}/" charts/values.yaml
+          sed -i \
+            -e "/^rackspaceWebhook:/,/^[^ ]/s/^\([[:space:]]*tag:\).*/\1 ${NEW_TAG}/" \
+            charts/values.yaml
 
           # package chart
           helm package -u -d ${{ github.workspace }} charts
