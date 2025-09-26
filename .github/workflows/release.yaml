@@ -72,14 +72,8 @@ jobs:
           PKG_VER=${GITHUB_REF_NAME#v}
 
           # update Chart.yaml with tag version
-          sed -i \
-            -e "s/^appVersion:.*/appVersion: ${PKG_VER}/" \
-            -e "s/^version:.*/version: ${PKG_VER}/" \
-            charts/Chart.yaml
-
-          sed -i \
-            -e "/^rackspaceWebhook:/,/^[^ ]/s/^\([[:space:]]*tag:\).*/\1 ${NEW_TAG}/" \
-            charts/values.yaml
+          yq -i ".appVersion = \"${PKG_VER}\" | .version = \"${PKG_VER}\"" charts/Chart.yaml
+          yq -i ".rackspaceWebhook.image.tag = \"${PKG_VER}\"" charts/values.yaml
 
           # package chart
           helm package -u -d ${{ github.workspace }} charts
