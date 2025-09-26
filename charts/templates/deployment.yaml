@@ -29,7 +29,9 @@ spec:
         image: "{{ .Values.externalDns.image.repository }}:{{ .Values.externalDns.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.externalDns.image.pullPolicy }}
         args:
-          - --domain-filter={{ .Values.domainFilter }}
+          {{- range .Values.domainFilter }}
+          - --domain-filter={{ . }}
+          {{- end }}
           {{- range .Values.externalDns.args }}
           - {{ . | quote }}
           {{- end }}
@@ -59,7 +61,7 @@ spec:
           {{- toYaml .Values.rackspaceWebhook.readinessProbe | nindent 10 }}
         env:
         - name: DOMAIN_FILTER
-          value: {{ .Values.domainFilter | quote }}
+          value: {{ .Values.domainFilter | join "," | quote }}
         - name: RACKSPACE_USERNAME
           valueFrom:
             secretKeyRef:
