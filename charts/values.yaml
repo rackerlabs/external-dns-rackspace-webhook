@@ -8,7 +8,8 @@ externalDns:
   enabled: true
   image:
     repository: registry.k8s.io/external-dns/external-dns
-    tag: v0.18.0
+    # -- defaults to the Chart's AppVersion which should match the External DNS release
+    tag: ""
     pullPolicy: IfNotPresent
   replicas: 1
   serviceAccount:
@@ -63,7 +64,8 @@ rackspaceWebhook:
   enabled: true
   image:
     repository: ghcr.io/rackerlabs/external-dns-rackspace-webhook
-    tag: latest
+    # -- defaults to the Chart version which matches the container version
+    tag: ""
     pullPolicy: IfNotPresent 
   secret:
     create: true
