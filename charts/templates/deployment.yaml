@@ -26,7 +26,7 @@ spec:
       - name: external-dns
         securityContext:
           {{- toYaml .Values.externalDns.containerSecurityContext | nindent 10 }}
-        image: "{{ .Values.externalDns.image.repository }}:{{ .Values.externalDns.image.tag }}"
+        image: "{{ .Values.externalDns.image.repository }}:{{ .Values.externalDns.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.externalDns.image.pullPolicy }}
         args:
           - --domain-filter={{ .Values.domainFilter }}
@@ -47,7 +47,7 @@ spec:
       - name: rackspace-webhook
         securityContext:
           {{- toYaml .Values.rackspaceWebhook.containerSecurityContext | nindent 10 }}
-        image: "{{ .Values.rackspaceWebhook.image.repository }}:{{ .Values.rackspaceWebhook.image.tag }}"
+        image: "{{ .Values.rackspaceWebhook.image.repository }}:{{ .Values.rackspaceWebhook.image.tag | default (printf "v%s" .Chart.Version) }}"
         imagePullPolicy: {{ .Values.rackspaceWebhook.image.pullPolicy }}
         ports:
         - name: http

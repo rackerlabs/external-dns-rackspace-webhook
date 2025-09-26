@@ -72,8 +72,7 @@ jobs:
           PKG_VER=${GITHUB_REF_NAME#v}
 
           # update Chart.yaml with tag version
-          yq -i ".appVersion = \"${PKG_VER}\" | .version = \"${PKG_VER}\"" charts/Chart.yaml
-          yq -i ".rackspaceWebhook.image.tag = \"${PKG_VER}\"" charts/values.yaml
+          yq -i ".version = \"${PKG_VER}\"" charts/Chart.yaml
 
           # package chart
           helm package -u -d ${{ github.workspace }} charts
