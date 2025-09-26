@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -138,30 +139,46 @@ func (p *RackspaceProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 
 // ApplyChanges applies DNS record changes to Rackspace Cloud DNS
 func (p *RackspaceProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) error {
-	log.Info("Applying changes", "create", len(changes.Create), "updateNew", len(changes.UpdateNew), "delete", len(changes.Delete))
+	var errs []error
+
+	log.Info("Applying changes",
+		"create", len(changes.Create),
+		"updateNew", len(changes.UpdateNew),
+		"delete", len(changes.Delete),
+	)
 	if p.DryRun {
 		log.Info("Dry run enabled, skipping changes")
 		return nil
 	}
+
 	for _, ep := range changes.Delete {
 		if err := p.deleteRecord(ctx, ep); err != nil {
-			return fmt.Errorf("failed to delete record %s: %v", ep.DNSName, err)
+			errs = append(errs, fmt.Errorf("failed to delete record %s: %v", ep.DNSName, err))
 		}
 	}
 
 	for _, ep := range changes.Create {
 		if err := p.createRecord(ctx, ep); err != nil {
-			return fmt.Errorf("failed to create record %s: %v", ep.DNSName, err)
+			errs = append(errs, fmt.Errorf("failed to create record %s: %v", ep.DNSName, err))
 		}
 	}
 
 	for _, ep := range changes.UpdateNew {
 		if err := p.updateRecord(ctx, ep); err != nil {
-			return fmt.Errorf("failed to update record %s: %v", ep.DNSName, err)
+			errs = append(errs, fmt.Errorf("failed to update record %s: %v", ep.DNSName, err))
 		}
 	}
 
-	return nil
+	if len(errs) == 0 {
+		return nil
+	}
+
+	log.Error("collected errors while applying changes", "count", len(errs))
+	for i, e := range errs {
+		log.Error("collected error", "index", i, "err", e)
+	}
+
+	return errors.Join(errs...)
 }
 
 func convertRecordToEndpoint(record records.RecordList, domainName string) *endpoint.Endpoint {
