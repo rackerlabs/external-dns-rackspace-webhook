@@ -1,8 +1,9 @@
 # Global values
 # -- Kubernetes namespace for deployment
 namespace: external-dns
-# -- Domain filter for DNS management (comma-separated for multiple domains)
-domainFilter: example.com
+# -- Domain filter for DNS management (list of domains)
+domainFilter:
+  - example.com
 
 # External DNS configuration
 externalDns:
