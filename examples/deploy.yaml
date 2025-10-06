@@ -164,14 +164,14 @@ spec:
         image: ghcr.io/rackerlabs/external-dns-rackspace-webhook:latest
         imagePullPolicy: IfNotPresent
         ports:
-        - name: http
+        - name: http-webhook
           protocol: TCP
           containerPort: 8888
         livenessProbe:
           failureThreshold: 2
           httpGet:
             path: /healthz
-            port: http
+            port: http-webhook
           initialDelaySeconds: 10
           periodSeconds: 10
           successThreshold: 1
@@ -180,7 +180,7 @@ spec:
           failureThreshold: 6
           httpGet:
             path: /healthz
-            port: http
+            port: http-webhook
           initialDelaySeconds: 5
           periodSeconds: 10
           successThreshold: 1
