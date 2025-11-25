@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"sigs.k8s.io/external-dns/endpoint"
@@ -231,9 +232,15 @@ func TestRackspaceProvider_findDomain(t *testing.T) {
 
 			p := &RackspaceProvider{
 				serviceClient: NewRackspaceDNSClient(FakeDNSClient()),
-				authProvider:  nil,
-				DomainFilter:  endpoint.NewDomainFilter([]string{}),
-				DryRun:        false,
+				authProvider:  NewRackspaceAuthProvider(),
+				tokenExpiry:   time.Now().Add(24 * time.Hour), // Set token to not expire during test
+				config: &RackspaceConfig{
+					IdentityEndpoint: th.Endpoint(),
+					Username:         "test",
+					APIKey:           "test",
+				},
+				DomainFilter: endpoint.NewDomainFilter([]string{}),
+				DryRun:       false,
 			}
 
 			got, err := p.findDomain(context.Background(), tt.dnsName)

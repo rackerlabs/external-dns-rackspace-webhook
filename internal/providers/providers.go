@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -19,6 +20,11 @@ import (
 	"sigs.k8s.io/external-dns/plan"
 )
 
+const (
+	defaultTokenLifetime   = 4 * time.Hour
+	tokenRefreshBeforeTime = -1 * time.Hour
+)
+
 type RackspaceConfig struct {
 	IdentityEndpoint string
 	Username         string
@@ -31,8 +37,11 @@ type RackspaceConfig struct {
 }
 
 type RackspaceProvider struct {
+	mu            sync.RWMutex
 	serviceClient ServiceClient
 	authProvider  AuthProvider
+	tokenExpiry   time.Time
+	config        *RackspaceConfig
 	DomainFilter  *endpoint.DomainFilter
 	DryRun        bool
 }
@@ -41,7 +50,7 @@ func NewRackspaceProvider(config *RackspaceConfig) (*RackspaceProvider, error) {
 	authProvider := NewRackspaceAuthProvider()
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	client, err := authenticateAndCreateClient(ctx, authProvider, config)
+	client, tokenExpiry, err := authenticateAndCreateClient(ctx, authProvider, config)
 	if err != nil {
 		return nil, err
 	}
@@ -54,22 +63,31 @@ func NewRackspaceProvider(config *RackspaceConfig) (*RackspaceProvider, error) {
 	return &RackspaceProvider{
 		serviceClient: dnsClient,
 		authProvider:  authProvider,
+		tokenExpiry:   tokenExpiry,
+		config:        config,
 		DomainFilter:  domainFilter,
 		DryRun:        config.DryRun,
 	}, nil
 }
 
-// NewRackspaceProviderWithClients creates a new RackspaceProvider with injected dependencies for testing
-func NewRackspaceProviderWithClients(dnsClient ServiceClient, authProvider AuthProvider, domainFilter []string, dryRun bool) *RackspaceProvider {
-	return &RackspaceProvider{
-		serviceClient: dnsClient,
-		authProvider:  authProvider,
-		DomainFilter:  endpoint.NewDomainFilter(domainFilter),
-		DryRun:        dryRun,
+func (p *RackspaceProvider) getClient() ServiceClient {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if time.Now().Before(p.tokenExpiry.Add(tokenRefreshBeforeTime)) {
+		return p.serviceClient
 	}
+	clientRaw, tokenExpiry, err := authenticateAndCreateClient(context.Background(), p.authProvider, p.config)
+	if err != nil {
+		log.Error("Failed to refresh rackspace token", "error", err)
+		return p.serviceClient
+	}
+	p.serviceClient = NewRackspaceDNSClient(clientRaw)
+	p.tokenExpiry = tokenExpiry
+	log.Info("Refreshed Rackspace token", "expiresAt", tokenExpiry)
+	return p.serviceClient
 }
 
-func authenticateAndCreateClient(ctx context.Context, authProvider AuthProvider, config *RackspaceConfig) (*gophercloud.ServiceClient, error) {
+func authenticateAndCreateClient(ctx context.Context, authProvider AuthProvider, config *RackspaceConfig) (*gophercloud.ServiceClient, time.Time, error) {
 	authOpts := goraxauth.AuthOptions{
 		AuthOptions: tokens.AuthOptions{
 			IdentityEndpoint: config.IdentityEndpoint,
@@ -83,21 +101,30 @@ func authenticateAndCreateClient(ctx context.Context, authProvider AuthProvider,
 
 	provider, err := authProvider.Authenticate(ctx, authOpts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to authenticate with Rackspace: %v", err)
+		return nil, time.Time{}, fmt.Errorf("failed to authenticate with Rackspace: %v", err)
+	}
+
+	tokenExpiry := time.Now().Add(defaultTokenLifetime)
+	if provider.TokenID != "" {
+		if authResult, ok := provider.GetAuthResult().(tokens.CreateResult); ok {
+			if token, err := authResult.ExtractToken(); err == nil && token != nil {
+				tokenExpiry = token.ExpiresAt
+			}
+		}
 	}
 
 	client, err := authProvider.CreateDNSClient(provider, gophercloud.EndpointOpts{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Cloud DNS client: %v", err)
+		return nil, time.Time{}, fmt.Errorf("failed to create Cloud DNS client: %v", err)
 	}
 
-	return client, nil
+	return client, tokenExpiry, nil
 }
 
 func (p *RackspaceProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, error) {
 	var endpoints []*endpoint.Endpoint
 	opts := domains.ListOpts{}
-	pager := p.serviceClient.ListDomains(ctx, opts)
+	pager := p.getClient().ListDomains(ctx, opts)
 	start := time.Now()
 
 	err := pager.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
@@ -110,7 +137,7 @@ func (p *RackspaceProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 				continue
 			}
 			recordOpts := records.ListOpts{}
-			recordPager := p.serviceClient.ListRecords(ctx, domain.ID, recordOpts)
+			recordPager := p.getClient().ListRecords(ctx, domain.ID, recordOpts)
 			err := recordPager.EachPage(ctx, func(ctx context.Context, recordPage pagination.Page) (bool, error) {
 				recordList, err := records.ExtractRecords(recordPage)
 				if err != nil {
@@ -240,7 +267,7 @@ func (p *RackspaceProvider) createRecord(ctx context.Context, ep *endpoint.Endpo
 			}
 			createOpts.TTL = ttl
 		}
-		if _, err := p.serviceClient.CreateRecord(ctx, domain.ID, createOpts); err != nil {
+		if _, err := p.getClient().CreateRecord(ctx, domain.ID, createOpts); err != nil {
 			return fmt.Errorf("failed to create record %s: %v", ep.DNSName, err)
 		}
 		log.Info("Created record", "dnsName", ep.DNSName, "type", ep.RecordType, "target", target)
@@ -271,7 +298,7 @@ func (p *RackspaceProvider) deleteRecord(ctx context.Context, endpoint *endpoint
 
 func (p *RackspaceProvider) deleteRecordByName(ctx context.Context, domain *domains.DomainList, dnsName, recordType string) error {
 	wantName := strings.TrimSuffix(strings.ToLower(dnsName), ".")
-	pager := p.serviceClient.ListRecords(ctx, domain.ID, records.ListOpts{})
+	pager := p.getClient().ListRecords(ctx, domain.ID, records.ListOpts{})
 
 	var errs []error
 	err := pager.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
@@ -283,7 +310,7 @@ func (p *RackspaceProvider) deleteRecordByName(ctx context.Context, domain *doma
 		for _, rec := range recordList {
 			gotName := strings.TrimSuffix(strings.ToLower(rec.Name), ".")
 			if gotName == wantName && strings.EqualFold(rec.Type, recordType) {
-				if e := p.serviceClient.DeleteRecord(ctx, domain.ID, rec.ID); e != nil {
+				if e := p.getClient().DeleteRecord(ctx, domain.ID, rec.ID); e != nil {
 					errs = append(errs, fmt.Errorf("failed to delete record %s: %v", rec.Name, e))
 				} else {
 					log.Info("Deleted record", "dnsName", rec.Name, "type", recordType)
@@ -304,7 +331,7 @@ func (p *RackspaceProvider) deleteRecordByName(ctx context.Context, domain *doma
 func (p *RackspaceProvider) findDomain(ctx context.Context, dnsName string) (*domains.DomainList, error) {
 	dnsName = strings.TrimSuffix(strings.ToLower(dnsName), ".")
 	opts := domains.ListOpts{}
-	pager := p.serviceClient.ListDomains(ctx, opts)
+	pager := p.getClient().ListDomains(ctx, opts)
 
 	var bestMatch *domains.DomainList
 	err := pager.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
