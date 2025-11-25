@@ -78,7 +78,7 @@ func (p *RackspaceProvider) getClient() ServiceClient {
 	}
 	clientRaw, tokenExpiry, err := authenticateAndCreateClient(context.Background(), p.authProvider, p.config)
 	if err != nil {
-		log.Error("Failed to refresh rackspace token", "error", err)
+		log.Error("Failed to refresh Rackspace token", "error", err)
 		return p.serviceClient
 	}
 	p.serviceClient = NewRackspaceDNSClient(clientRaw)
