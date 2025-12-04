@@ -2,7 +2,7 @@ apiVersion: v2
 name: external-dns-rackspace
 description: A Helm chart for deploying external-dns with Rackspace webhook provider
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "v0.18.0"
 keywords:
   - external-dns

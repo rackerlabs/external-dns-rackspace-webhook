@@ -32,6 +32,9 @@ spec:
           {{- range .Values.domainFilter }}
           - --domain-filter={{ . }}
           {{- end }}
+          {{- range .Values.externalDns.sources }}
+          - --source={{ . }}
+          {{- end }}
           {{- range .Values.externalDns.args }}
           - {{ . | quote }}
           {{- end }}

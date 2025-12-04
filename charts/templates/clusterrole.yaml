@@ -10,9 +10,37 @@ rules:
   - apiGroups: [""]
     resources: ["services","endpoints","pods", "nodes"]
     verbs: ["get","list","watch"]
+{{- if has "ingress" .Values.externalDns.sources }}
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
     verbs: ["get","list","watch"]
+{{- end }}
+{{- if or
+   (has "gateway-httproute" .Values.externalDns.sources)
+   (has "gateway-tlsroute" .Values.externalDns.sources)
+   (has "gateway-tcproute" .Values.externalDns.sources)
+   (has "gateway-udproute" .Values.externalDns.sources)
+}}
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get","watch","list"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - "gateways"
+{{- if has "gateway-httproute" .Values.externalDns.sources }}
+      - "httproutes"
+{{- end }}
+{{- if has "gateway-tlsroute" .Values.externalDns.sources }}
+      - "tlsroutes"
+{{- end }}
+{{- if has "gateway-tcproute" .Values.externalDns.sources }}
+      - "tcproutes"
+{{- end }}
+{{- if has "gateway-udproute" .Values.externalDns.sources }}
+      - "udproutes"
+{{- end }}
+    verbs: ["get","watch","list"]
+{{- end }}
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
     verbs: ["get","list","watch"]
