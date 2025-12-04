@@ -33,10 +33,17 @@ externalDns:
     type: ClusterIP
     # -- Service port number
     port: 7979
+  sources:
+    - service
+    - ingress
+    - gateway-httproute
+    - gateway-tlsroute
+    - gateway-tcproute
+    - gateway-udproute
   # -- External DNS command arguments
+  # --source and --domain-filter are appended automatically
+  # based on the .Values.domainFilter and .Values.externalDns.sources
   args:
-    - --source=service
-    - --source=ingress
     - --interval=10m
     - --provider=webhook
     - --webhook-provider-url=http://localhost:8888
