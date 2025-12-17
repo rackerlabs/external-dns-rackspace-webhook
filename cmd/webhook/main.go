@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -15,7 +16,7 @@ import (
 )
 
 const (
-	defaultPort             = 8888
+	defaultPort             = 2020
 	defaultIdentityEndpoint = "https://identity.api.rackspacecloud.com/v2.0/"
 )
 
@@ -48,16 +49,16 @@ func getStartPort() (int, error) {
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return 0, fmt.Errorf("invalid port %s", err.Error())
+		return 0, fmt.Errorf("invalid port format: %s", portStr)
 	}
 	return port, nil
 }
 
 func loadConfig() *providers.RackspaceConfig {
 	config := &providers.RackspaceConfig{
-		Username:         os.Getenv("RACKSPACE_USERNAME"),
-		APIKey:           os.Getenv("RACKSPACE_API_KEY"),
-		IdentityEndpoint: os.Getenv("RACKSPACE_IDENTITY_ENDPOINT"),
+		Username:         strings.TrimSpace(os.Getenv("RACKSPACE_USERNAME")),
+		APIKey:           strings.TrimSpace(os.Getenv("RACKSPACE_API_KEY")),
+		IdentityEndpoint: strings.TrimSpace(os.Getenv("RACKSPACE_IDENTITY_ENDPOINT")),
 		DryRun:           false,
 		LogLevel:         "info",
 	}
@@ -79,8 +80,14 @@ func loadConfig() *providers.RackspaceConfig {
 	}
 
 	// Validate required fields
-	if config.Username == "" || config.APIKey == "" {
-		log.Fatal("RACKSPACE_USERNAME and RACKSPACE_API_KEY are required")
+	if config.Username == "" {
+		log.Fatal("RACKSPACE_USERNAME is required and cannot be empty")
+	}
+	if config.APIKey == "" {
+		log.Fatal("RACKSPACE_API_KEY is required and cannot be empty")
+	}
+	if _, err := url.Parse(config.IdentityEndpoint); err != nil {
+		log.Fatalf("Invalid RACKSPACE_IDENTITY_ENDPOINT URL: %v", err)
 	}
 
 	return config

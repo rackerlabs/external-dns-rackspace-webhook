@@ -8,6 +8,7 @@ import (
 )
 
 func ConfigureRoutes(e *echo.Echo, h *handlers.Handler) {
+	e.Use(echoMiddleware.Recover())
 	e.Pre(echoMiddleware.RemoveTrailingSlash())
 	e.Use(middleware.ExternalDNSContentTypeMiddleware)
 

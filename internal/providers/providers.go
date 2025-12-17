@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -70,13 +71,13 @@ func NewRackspaceProvider(config *RackspaceConfig) (*RackspaceProvider, error) {
 	}, nil
 }
 
-func (p *RackspaceProvider) getClient() ServiceClient {
+func (p *RackspaceProvider) getClient(ctx context.Context) ServiceClient {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if time.Now().Before(p.tokenExpiry.Add(tokenRefreshBeforeTime)) {
 		return p.serviceClient
 	}
-	clientRaw, tokenExpiry, err := authenticateAndCreateClient(context.Background(), p.authProvider, p.config)
+	clientRaw, tokenExpiry, err := authenticateAndCreateClient(ctx, p.authProvider, p.config)
 	if err != nil {
 		log.Error("Failed to refresh Rackspace token", "error", err)
 		return p.serviceClient
@@ -107,8 +108,13 @@ func authenticateAndCreateClient(ctx context.Context, authProvider AuthProvider,
 	tokenExpiry := time.Now().Add(defaultTokenLifetime)
 	if provider.TokenID != "" {
 		if authResult, ok := provider.GetAuthResult().(tokens.CreateResult); ok {
-			if token, err := authResult.ExtractToken(); err == nil && token != nil {
+			token, err := authResult.ExtractToken()
+			if err != nil {
+				log.Warn("Failed to extract token, using default expiry", "error", err)
+			} else if token != nil {
 				tokenExpiry = token.ExpiresAt
+			} else {
+				log.Warn("Extracted token is nil, using default expiry")
 			}
 		}
 	}
@@ -124,7 +130,7 @@ func authenticateAndCreateClient(ctx context.Context, authProvider AuthProvider,
 func (p *RackspaceProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, error) {
 	var endpoints []*endpoint.Endpoint
 	opts := domains.ListOpts{}
-	pager := p.getClient().ListDomains(ctx, opts)
+	pager := p.getClient(ctx).ListDomains(ctx, opts)
 	start := time.Now()
 
 	err := pager.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
@@ -136,12 +142,11 @@ func (p *RackspaceProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 			if !p.DomainFilter.Match(domain.Name) {
 				continue
 			}
-			recordOpts := records.ListOpts{}
-			recordPager := p.getClient().ListRecords(ctx, domain.ID, recordOpts)
+			recordPager := p.getClient(ctx).ListRecords(ctx, domain.ID, records.ListOpts{})
 			err := recordPager.EachPage(ctx, func(ctx context.Context, recordPage pagination.Page) (bool, error) {
 				recordList, err := records.ExtractRecords(recordPage)
 				if err != nil {
-					return false, err
+					return false, fmt.Errorf("failed to extract records: %w", err)
 				}
 				for _, record := range recordList {
 					if ep := convertRecordToEndpoint(record, domain.Name); ep != nil {
@@ -158,7 +163,7 @@ func (p *RackspaceProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 	})
 	log.Debug("Fetched records", "count", len(endpoints), "elapsed", time.Since(start))
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch domains: %v", err)
+		return nil, fmt.Errorf("failed to fetch domains: %w", err)
 	}
 
 	return endpoints, nil
@@ -167,7 +172,6 @@ func (p *RackspaceProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 // ApplyChanges applies DNS record changes to Rackspace Cloud DNS
 func (p *RackspaceProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) error {
 	var errs []error
-
 	log.Info("Applying changes",
 		"create", len(changes.Create),
 		"updateNew", len(changes.UpdateNew),
@@ -212,39 +216,19 @@ func convertRecordToEndpoint(record records.RecordList, domainName string) *endp
 	if record.Type == "NS" || record.Type == "SOA" {
 		return nil
 	}
-
-	domainName = strings.TrimSuffix(strings.ToLower(domainName), ".")
-	recordName := strings.TrimSuffix(strings.ToLower(record.Name), ".")
-
-	var dnsName string
-	if recordName == "" || recordName == domainName {
-		dnsName = domainName + "."
-	} else if strings.HasSuffix(recordName, "."+domainName) {
-		dnsName = recordName + "."
-	} else {
-		dnsName = recordName + "." + domainName + "."
+	var labels map[string]string
+	if record.Type == "TXT" && record.Comment != "" {
+		if err := json.Unmarshal([]byte(record.Comment), &labels); err != nil {
+			log.Warn("Failed to unmarshal TXT record labels", "name", record.Name, "comment", record.Comment, "error", err)
+		}
 	}
-
-	// Normalize TXT data (Rackspace often stores without quotes)
-	data := record.Data
-	if record.Type == "TXT" {
-		data = strings.Trim(data, `"`)
-		data = fmt.Sprintf(`"%s"`, data)
-	}
-
 	ep := &endpoint.Endpoint{
-		DNSName:          dnsName,
-		RecordType:       record.Type,
-		Targets:          []string{data},
-		ProviderSpecific: nil,
+		DNSName:    record.Name,
+		RecordType: record.Type,
+		Targets:    []string{record.Data},
+		RecordTTL:  endpoint.TTL(record.TTL),
+		Labels:     labels,
 	}
-
-	if record.TTL != 0 {
-		ep.RecordTTL = endpoint.TTL(record.TTL)
-	} else {
-		ep.RecordTTL = endpoint.TTL(300) // default to 300s if API didn’t return
-	}
-
 	return ep
 }
 
@@ -255,19 +239,21 @@ func (p *RackspaceProvider) createRecord(ctx context.Context, ep *endpoint.Endpo
 	}
 	fqdn := strings.TrimSuffix(strings.ToLower(ep.DNSName), ".")
 	for _, target := range ep.Targets {
-		createOpts := records.CreateOpts{
-			Name: fqdn,
-			Type: ep.RecordType,
-			Data: target,
-		}
-		if ep.RecordTTL.IsConfigured() {
-			ttl := uint(ep.RecordTTL)
-			if ttl < 300 {
-				ttl = 300
+		var labels string
+		if ep.RecordType == "TXT" {
+			target = strings.Trim(target, `"`)
+			if len(ep.Labels) > 0 {
+				b, _ := json.Marshal(ep.Labels)
+				labels = string(b)
 			}
-			createOpts.TTL = ttl
 		}
-		if _, err := p.getClient().CreateRecord(ctx, domain.ID, createOpts); err != nil {
+		createOpts := records.CreateOpts{
+			Name:    fqdn,
+			Type:    ep.RecordType,
+			Data:    target,
+			Comment: labels,
+		}
+		if _, err := p.getClient(ctx).CreateRecord(ctx, domain.ID, createOpts); err != nil {
 			return fmt.Errorf("failed to create record %s: %v", ep.DNSName, err)
 		}
 		log.Info("Created record", "dnsName", ep.DNSName, "type", ep.RecordType, "target", target)
@@ -297,8 +283,11 @@ func (p *RackspaceProvider) deleteRecord(ctx context.Context, endpoint *endpoint
 }
 
 func (p *RackspaceProvider) deleteRecordByName(ctx context.Context, domain *domains.DomainList, dnsName, recordType string) error {
+	if domain == nil {
+		return fmt.Errorf("domain cannot be nil")
+	}
 	wantName := strings.TrimSuffix(strings.ToLower(dnsName), ".")
-	pager := p.getClient().ListRecords(ctx, domain.ID, records.ListOpts{})
+	pager := p.getClient(ctx).ListRecords(ctx, domain.ID, records.ListOpts{})
 
 	var errs []error
 	err := pager.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
@@ -310,8 +299,8 @@ func (p *RackspaceProvider) deleteRecordByName(ctx context.Context, domain *doma
 		for _, rec := range recordList {
 			gotName := strings.TrimSuffix(strings.ToLower(rec.Name), ".")
 			if gotName == wantName && strings.EqualFold(rec.Type, recordType) {
-				if e := p.getClient().DeleteRecord(ctx, domain.ID, rec.ID); e != nil {
-					errs = append(errs, fmt.Errorf("failed to delete record %s: %v", rec.Name, e))
+				if e := p.getClient(ctx).DeleteRecord(ctx, domain.ID, rec.ID); e != nil {
+					errs = append(errs, fmt.Errorf("failed to delete record %s: %w", rec.Name, e))
 				} else {
 					log.Info("Deleted record", "dnsName", rec.Name, "type", recordType)
 				}
@@ -320,24 +309,27 @@ func (p *RackspaceProvider) deleteRecordByName(ctx context.Context, domain *doma
 		return true, nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list records: %v", err)
+		return fmt.Errorf("failed to list records: %w", err)
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf("errors during deletion: %v", errs)
+		return errors.Join(errs...)
 	}
 	return nil
 }
 
 func (p *RackspaceProvider) findDomain(ctx context.Context, dnsName string) (*domains.DomainList, error) {
+	if dnsName == "" {
+		return nil, fmt.Errorf("DNS name cannot be empty")
+	}
 	dnsName = strings.TrimSuffix(strings.ToLower(dnsName), ".")
 	opts := domains.ListOpts{}
-	pager := p.getClient().ListDomains(ctx, opts)
+	pager := p.getClient(ctx).ListDomains(ctx, opts)
 
 	var bestMatch *domains.DomainList
 	err := pager.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
 		domainList, err := domains.ExtractDomains(page)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("failed to extract domains: %w", err)
 		}
 		for _, domain := range domainList {
 			domainName := strings.TrimSuffix(strings.ToLower(domain.Name), ".")
@@ -351,7 +343,7 @@ func (p *RackspaceProvider) findDomain(ctx context.Context, dnsName string) (*do
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to list domains: %v", err)
+		return nil, fmt.Errorf("failed to list domains: %w", err)
 	}
 	if bestMatch == nil {
 		return nil, fmt.Errorf("no matching domain found for %s", dnsName)
