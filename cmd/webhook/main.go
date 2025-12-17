@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	defaultPort             = 2020
+	defaultPort             = 8888
 	defaultIdentityEndpoint = "https://identity.api.rackspacecloud.com/v2.0/"
 )
 
