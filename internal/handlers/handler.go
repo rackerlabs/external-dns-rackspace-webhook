@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -31,6 +30,7 @@ func (h *Handler) NegotiationHandler(c echo.Context) error {
 func (h *Handler) HandleGetRecords(c echo.Context) error {
 	endpoints, err := h.provider.Records(c.Request().Context())
 	if err != nil {
+		log.Error("Failed to get records", "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -38,8 +38,8 @@ func (h *Handler) HandleGetRecords(c echo.Context) error {
 }
 
 func (h *Handler) HandleAdjustEndpoints(c echo.Context) error {
+	defer c.Request().Body.Close()
 	var endpoints []*endpoint.Endpoint
-
 	if err := json.NewDecoder(c.Request().Body).Decode(&endpoints); err != nil {
 		log.Error("Failed to decode input", "error", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -49,11 +49,14 @@ func (h *Handler) HandleAdjustEndpoints(c echo.Context) error {
 	adjusted := make([]*endpoint.Endpoint, 0, len(endpoints))
 
 	for _, ep := range endpoints {
+		if ep == nil {
+			log.Warn("Skipping nil endpoint")
+			continue
+		}
 		if ep == nil || ep.DNSName == "" || len(ep.Targets) == 0 {
 			log.Warn("Skipping invalid endpoint", "dnsName", ep.DNSName)
 			continue
 		}
-
 		// Canonicalize DNS name
 		dnsName := strings.ToLower(strings.TrimSuffix(ep.DNSName, ".")) + "."
 		if !h.provider.DomainFilter.Match(dnsName) {
@@ -81,18 +84,16 @@ func (h *Handler) HandleAdjustEndpoints(c echo.Context) error {
 		for _, t := range ep.Targets {
 			if ep.RecordType == "TXT" {
 				t = strings.Trim(t, `"`)
-				t = fmt.Sprintf(`"%s"`, t)
 			}
 			targets = append(targets, t)
 		}
 
 		adjusted = append(adjusted, &endpoint.Endpoint{
-			DNSName:          dnsName,
-			Targets:          targets,
-			RecordType:       ep.RecordType,
-			RecordTTL:        ttl,
-			Labels:           ep.Labels,
-			ProviderSpecific: nil,
+			DNSName:    dnsName,
+			Targets:    targets,
+			RecordType: ep.RecordType,
+			RecordTTL:  ttl,
+			Labels:     ep.Labels,
 		})
 	}
 
@@ -100,6 +101,7 @@ func (h *Handler) HandleAdjustEndpoints(c echo.Context) error {
 }
 
 func (h *Handler) HandlePostRecords(c echo.Context) error {
+	defer c.Request().Body.Close()
 	var changes plan.Changes
 	if err := json.NewDecoder(c.Request().Body).Decode(&changes); err != nil {
 		log.Error("Failed to decode input", "error", err)
