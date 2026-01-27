@@ -69,6 +69,7 @@ jobs:
         uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
 
       - name: Install cosign
+        if: github.event.pull_request.head.repo.fork != true
         uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
 
       - name: Set up QEMU
@@ -82,7 +83,7 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --skip=publish --snapshot
+          args: release --clean --skip=publish --snapshot ${{ github.event.pull_request.head.repo.fork == true && '--skip=sign' || '' }}
 
   chart:
     name: Lint Helm charts
