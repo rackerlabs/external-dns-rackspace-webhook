@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -253,6 +254,24 @@ func (p *RackspaceProvider) createRecord(ctx context.Context, ep *endpoint.Endpo
 			Data:    target,
 			Comment: labels,
 		}
+
+		if ep.RecordType == "SRV" {
+			targetParts := strings.Split(target, " ")
+			if len(targetParts) == 4 {
+				priority, err := strconv.Atoi(targetParts[0])
+				if err != nil {
+					log.Warn("Invalid SRV priority", "dnsName", ep.DNSName, "target", target)
+					return err
+				}
+				createOpts.Priority = uint(priority)
+
+				createOpts.Data = fmt.Sprintf("%s %s %s", targetParts[1], targetParts[2], fqdn)
+			} else {
+				log.Warn("Invalid SRV record format", "dnsName", ep.DNSName, "target", target)
+				return fmt.Errorf("invalid SRV record format: %s", target)
+			}
+		}
+
 		if _, err := p.getClient(ctx).CreateRecord(ctx, domain.ID, createOpts); err != nil {
 			return fmt.Errorf("failed to create record %s: %v", ep.DNSName, err)
 		}
