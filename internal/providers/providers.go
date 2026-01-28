@@ -240,36 +240,33 @@ func (p *RackspaceProvider) createRecord(ctx context.Context, ep *endpoint.Endpo
 	}
 	fqdn := strings.TrimSuffix(strings.ToLower(ep.DNSName), ".")
 	for _, target := range ep.Targets {
-		var labels string
+		createOpts := records.CreateOpts{
+			Name: fqdn,
+			Type: ep.RecordType,
+			Data: target,
+		}
+
 		if ep.RecordType == "TXT" {
-			target = strings.Trim(target, `"`)
+			createOpts.Data = strings.Trim(target, `"`)
 			if len(ep.Labels) > 0 {
 				b, _ := json.Marshal(ep.Labels)
-				labels = string(b)
+				createOpts.Comment = string(b)
 			}
-		}
-		createOpts := records.CreateOpts{
-			Name:    fqdn,
-			Type:    ep.RecordType,
-			Data:    target,
-			Comment: labels,
 		}
 
 		if ep.RecordType == "SRV" {
-			targetParts := strings.Split(target, " ")
-			if len(targetParts) == 4 {
-				priority, err := strconv.Atoi(targetParts[0])
-				if err != nil {
-					log.Warn("Invalid SRV priority", "dnsName", ep.DNSName, "target", target)
-					return err
-				}
-				createOpts.Priority = uint(priority)
-
-				createOpts.Data = fmt.Sprintf("%s %s %s", targetParts[1], targetParts[2], fqdn)
-			} else {
+			parts := strings.Split(target, " ")
+			if len(parts) != 4 {
 				log.Warn("Invalid SRV record format", "dnsName", ep.DNSName, "target", target)
 				return fmt.Errorf("invalid SRV record format: %s", target)
 			}
+			priority, err := strconv.Atoi(parts[0])
+			if err != nil {
+				log.Warn("Invalid SRV priority", "dnsName", ep.DNSName, "target", target)
+				return err
+			}
+			createOpts.Priority = uint(priority)
+			createOpts.Data = fmt.Sprintf("%s %s %s", parts[1], parts[2], fqdn)
 		}
 
 		if _, err := p.getClient(ctx).CreateRecord(ctx, domain.ID, createOpts); err != nil {
