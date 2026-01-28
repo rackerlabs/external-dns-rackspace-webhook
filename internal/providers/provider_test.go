@@ -270,3 +270,129 @@ func TestRackspaceProvider_findDomain(t *testing.T) {
 		})
 	}
 }
+
+func TestRackspaceProvider_createRecord(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint *endpoint.Endpoint
+		wantErr  bool
+	}{
+		{
+			name: "SRV record",
+			endpoint: &endpoint.Endpoint{
+				DNSName:    "_sip._tcp.example.com",
+				RecordType: "SRV",
+				Targets:    []string{"1 5 5060 _sip._tcp.example.com."},
+				RecordTTL:  endpoint.TTL(3600),
+				Labels:     map[string]string{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "SRV record - missing fields",
+			endpoint: &endpoint.Endpoint{
+				DNSName:    "_sip._tcp.example.com",
+				RecordType: "SRV",
+				Targets:    []string{"_sip._tcp.example.com."},
+				RecordTTL:  endpoint.TTL(3600),
+				Labels:     map[string]string{},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+
+		t.Run(tt.name, func(t *testing.T) {
+			th.SetupHTTP()
+			defer th.TeardownHTTP()
+
+			// Mock the domains list API response
+			th.Mux.HandleFunc("/domains", func(w http.ResponseWriter, r *http.Request) {
+				th.TestMethod(t, r, "GET")
+				th.TestHeader(t, r, "X-Auth-Token", "cbc36478b0bd8e67e89469c7749d4127")
+
+				w.Header().Add("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, `{
+					"domains": [
+						{
+							"id": "123456",
+							"name": "_sip._tcp.example.com.",
+							"ttl": 3600,
+							"emailAddress": "admin@example.com",
+							"updated": "2023-01-01T00:00:00.000+0000",
+							"created": "2023-01-01T00:00:00.000+0000"
+						}
+					]
+				}`)
+			})
+
+			th.Mux.HandleFunc("/domains/123456/records", func(w http.ResponseWriter, r *http.Request) {
+				th.TestMethod(t, r, "POST")
+				th.TestHeader(t, r, "X-Auth-Token", "cbc36478b0bd8e67e89469c7749d4127")
+
+				w.Header().Add("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				fmt.Fprint(w, `{
+					"callbackUrl": "`+th.Endpoint()+`callback",
+					"domains": [
+						{
+							"name": "_sip._tcp.example.com.",
+							"ttl": 3600,
+							"emailAddress": "admin@example.com",
+							"recordList": {
+								"records": [
+									{
+										"id": "123456",
+										"name": "_sip._tcp.example.com.",
+										"type": "SRV"
+									}
+								]
+							}
+						}
+					]
+				}`)
+			})
+
+			th.Mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+				th.TestMethod(t, r, "GET")
+				th.TestHeader(t, r, "X-Auth-Token", "cbc36478b0bd8e67e89469c7749d4127")
+
+				w.Header().Add("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, `{
+					"status": "COMPLETED",
+					"response": {
+									"records": [
+										{
+											"id": "123456",
+											"name": "_sip._tcp.example.com.",
+											"type": "SRV"
+										}
+									]
+								}
+				}`)
+			})
+
+			p := &RackspaceProvider{
+				serviceClient: NewRackspaceDNSClient(FakeDNSClient()),
+				authProvider:  NewRackspaceAuthProvider(),
+				tokenExpiry:   time.Now().Add(24 * time.Hour), // Set token to not expire during test
+				config: &RackspaceConfig{
+					IdentityEndpoint: th.Endpoint(),
+					Username:         "test",
+					APIKey:           "test",
+				},
+				DomainFilter: endpoint.NewDomainFilter([]string{}),
+				DryRun:       false,
+			}
+
+			err := p.createRecord(context.Background(), tt.endpoint)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RackspaceProvider.createRecord() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+		})
+	}
+}
