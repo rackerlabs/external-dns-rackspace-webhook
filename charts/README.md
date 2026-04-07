@@ -1,4 +1,6 @@
-# External DNS Rackspace Webhook Helm Chart
+# External DNS Rackspace Webhook Helm Chart (Legacy)
+
+> **Note**: This bundled chart is provided as a legacy installation option. The recommended installation method is to use the official [external-dns Helm chart](https://kubernetes-sigs.github.io/external-dns/) from kubernetes-sigs with the Rackspace webhook as a sidecar. See the [main README](../README.md) for the recommended approach.
 
 This Helm chart deploys [ExternalDNS](https://github.com/kubernetes-sigs/external-dns) with a Rackspace webhook provider to manage DNS records in a Kubernetes cluster. It automates DNS record creation, updates, and deletions for services and ingresses using the Rackspace DNS API via a custom webhook.
 

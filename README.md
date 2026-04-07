@@ -17,59 +17,133 @@ This webhook integrates External DNS with Rackspace Cloud DNS, allowing Kubernet
 
 ## Prerequisites
 
-- Kubernetes cluster with External DNS installed
+- Kubernetes cluster
+- Helm 3.8.0 or higher
 - Rackspace Cloud DNS account with API access
-- Rackspace username and API key## Qui
-ck Start
+- Rackspace username and API key
 
-### 1. Create Rackspace Credentials Secret
+## Installation
+
+The recommended installation method uses the official [external-dns Helm chart](https://kubernetes-sigs.github.io/external-dns/) from the kubernetes-sigs project, with this webhook running as a sidecar container.
+
+### 1. Add the external-dns Helm repository
 
 ```bash
-kubectl create secret generic external-dns-rackspace-webhook \
-  --from-literal=username="your-rackspace-username" \
-  --from-literal=api-key="your-rackspace-api-key" \
-  -n external-dns
+helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/
+helm repo update
 ```
 
-### 2. Deploy the Webhook
+### 2. Create a secret with your Rackspace credentials
 
 ```bash
-kubectl apply -f examples/deploy.yaml
+kubectl create namespace external-dns
+
+kubectl create secret generic rackspace-credentials \
+  --namespace external-dns \
+  --from-literal=username="YOUR_USERNAME" \
+  --from-literal=api-key="YOUR_API_KEY"
 ```
 
-### 3. Test with Sample Application
+### 3. Create a values file
+
+```yaml
+# external-dns-rackspace-values.yaml
+provider:
+  name: webhook
+  webhook:
+    image:
+      repository: ghcr.io/rackerlabs/external-dns-rackspace-webhook
+      tag: v0.2.2
+    env:
+      - name: RACKSPACE_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: rackspace-credentials
+            key: username
+      - name: RACKSPACE_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: rackspace-credentials
+            key: api-key
+      - name: LOG_LEVEL
+        value: info
+      - name: DRY_RUN
+        value: "false"
+    service:
+      port: 8888
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: http-webhook
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 2
+    readinessProbe:
+      httpGet:
+        path: /healthz
+        port: http-webhook
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
+
+sources:
+  - service
+  - ingress
+
+domainFilters:
+  - example.com   # replace with your domain(s)
+
+policy: upsert-only
+logLevel: info
+```
+
+> **Note**: `service.port: 8888` must match the webhook's `PORT` env var (default `8888`). The chart uses this value to configure `--webhook-provider-url` automatically and to route health probe traffic.
+
+### 4. Install
 
 ```bash
-kubectl apply -f examples/nginx.yaml
+helm upgrade --install external-dns external-dns/external-dns \
+  --namespace external-dns \
+  -f external-dns-rackspace-values.yaml
+```
+
+### Upgrading
+
+```bash
+helm upgrade external-dns external-dns/external-dns \
+  --namespace external-dns \
+  -f external-dns-rackspace-values.yaml
 ```
 
 ## Configuration
 
-### Environment Variables
+### Webhook environment variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `RACKSPACE_USERNAME` | Yes | - | Rackspace account username |
 | `RACKSPACE_API_KEY` | Yes | - | Rackspace API key |
+| `RACKSPACE_TENANT_ID` | No | - | Rackspace tenant ID |
 | `DOMAIN_FILTER` | No | - | Comma-separated list of domains to manage |
 | `DRY_RUN` | No | `false` | Enable dry run mode (no actual changes) |
 | `LOG_LEVEL` | No | `info` | Log level (debug, info, warn, error) |
 | `PORT` | No | `8888` | HTTP server port |
 
-### External DNS Configuration
+### Common external-dns chart values
 
-Configure External DNS to use this webhook:
+See the [external-dns chart documentation](https://kubernetes-sigs.github.io/external-dns/latest/charts/external-dns/) for the full list. Commonly used values:
 
-```yaml
-args:
-  - --source=service
-  - --source=ingress
-  - --provider=webhook
-  - --registry=noop
-  - --webhook-provider-url=http://localhost:8888
-  - --domain-filter=example.com
-  - --policy=upsert-only
-```
+| Value | Description |
+|-------|-------------|
+| `domainFilters` | List of domains to manage |
+| `policy` | `upsert-only` (safe default) or `sync` (enables deletions) |
+| `sources` | Kubernetes resource types to watch (`service`, `ingress`, `crd`, etc.) |
+| `interval` | Sync interval (default `1m`) |
+| `logLevel` | external-dns log level |
+| `resources` | CPU/memory limits for the external-dns container |
+| `provider.webhook.resources` | CPU/memory limits for the webhook sidecar |
 
 ## Development
 
@@ -129,12 +203,15 @@ docker build -t external-dns-rackspace-webhook .
 
 ### Debug Mode
 
-Enable debug logging to see detailed operation logs:
+Enable debug logging by setting `LOG_LEVEL` in your values file:
 
 ```yaml
-env:
-- name: LOG_LEVEL
-  value: "debug"
+provider:
+  webhook:
+    env:
+      - name: LOG_LEVEL
+        value: debug
+logLevel: debug
 ```
 
 ## Contributing
