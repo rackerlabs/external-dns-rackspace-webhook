@@ -7,13 +7,12 @@ import (
 	"github.com/rackerlabs/external-dns-rackspace-webhook/internal/middleware"
 )
 
-func ConfigureRoutes(e *echo.Echo, h *handlers.Handler) {
+// ConfigureWebhookRoutes sets up the external-dns webhook API routes (localhost only).
+func ConfigureWebhookRoutes(e *echo.Echo, h *handlers.Handler) {
 	e.Use(echoMiddleware.Recover())
 	e.Pre(echoMiddleware.RemoveTrailingSlash())
 	e.Use(middleware.ExternalDNSContentTypeMiddleware)
 
-	// Health check endpoint
-	e.GET("/healthz", h.HealthHandler)
 	// Domain filter negotiation endpoint
 	e.GET("/", h.NegotiationHandler)
 	// Get all DNS records
@@ -22,4 +21,10 @@ func ConfigureRoutes(e *echo.Echo, h *handlers.Handler) {
 	e.POST("/records", h.HandlePostRecords)
 	// Adjust endpoints (optional preprocessing)
 	e.POST("/adjustendpoints", h.HandleAdjustEndpoints)
+}
+
+// ConfigureOpsRoutes sets up operational endpoints exposed on all interfaces.
+func ConfigureOpsRoutes(e *echo.Echo, h *handlers.Handler) {
+	e.Use(echoMiddleware.Recover())
+	e.GET("/healthz", h.HealthHandler)
 }
