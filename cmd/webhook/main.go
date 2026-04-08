@@ -66,10 +66,12 @@ func main() {
 	// Expose healthz/readyz/metrics endpoints publicly
 	go func() { errCh <- ops.Start(fmt.Sprintf(":%d", defaultHealthzPort)) }()
 
+	exitCode := 0
 	select {
 	case err = <-errCh:
 		if !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("server error: %v", err)
+			exitCode = 1
 		}
 	case <-ctx.Done():
 		log.Println("shutdown signal received")
@@ -86,6 +88,7 @@ func main() {
 	if err := ops.Shutdown(shutdownCtx); err != nil {
 		log.Printf("ops shutdown error: %v", err)
 	}
+	os.Exit(exitCode)
 }
 
 func getStartPort() (int, error) {
