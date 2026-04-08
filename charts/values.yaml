@@ -4,7 +4,6 @@ namespace: external-dns
 # -- Domain filter for DNS management (list of domains)
 domainFilter:
   - example.com
-
 # External DNS configuration
 externalDns:
   # -- Enable external-dns deployment
@@ -83,7 +82,6 @@ externalDns:
     timeoutSeconds: 5
   # -- Resource limits and requests for external-dns
   resources: {}
-
 # Rackspace Webhook configuration
 rackspaceWebhook:
   # -- Enable Rackspace webhook deployment
@@ -125,7 +123,7 @@ rackspaceWebhook:
     failureThreshold: 2
     httpGet:
       path: /healthz
-      port: http
+      port: http-webhook
     initialDelaySeconds: 10
     periodSeconds: 10
     successThreshold: 1
@@ -135,7 +133,7 @@ rackspaceWebhook:
     failureThreshold: 6
     httpGet:
       path: /healthz
-      port: http
+      port: http-webhook
     initialDelaySeconds: 5
     periodSeconds: 10
     successThreshold: 1

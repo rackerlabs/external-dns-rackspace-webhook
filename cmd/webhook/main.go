@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -16,7 +22,12 @@ import (
 )
 
 const (
-	defaultPort             = 8888
+	//This is the internal port external-dns talks to the webhook on must always
+	//scoped to localhost:<PORT> but the port is configurable via the external-dns chart
+	defaultPort = 8888
+	//external-dns hardcodes the public healthz/readyz/metrics port in the chart to 8080
+	//this can't change unless the chart changes
+	defaultHealthzPort      = 8080
 	defaultIdentityEndpoint = "https://identity.api.rackspacecloud.com/v2.0/"
 )
 
@@ -28,18 +39,56 @@ func main() {
 		log.Fatalf("Failed to create Rackspace provider: %v", err)
 	}
 	handler := handlers.NewHandler(provider)
-	e := echo.New()
-	e.HideBanner = true
-	routes.ConfigureRoutes(e, handler)
 
 	port, err := getStartPort()
 	if err != nil {
 		log.Fatalf("invalid port %s", err)
 	}
 
-	if err = e.Start(fmt.Sprintf(":%d", port)); err != nil {
-		log.Fatalf("failed to start server: %v", err)
+	// Webhook API server — localhost only
+	webhook := echo.New()
+	webhook.HideBanner = true
+	routes.ConfigureWebhookRoutes(webhook, handler)
+
+	// Ops server — all interfaces
+	ops := echo.New()
+	ops.HideBanner = true
+	routes.ConfigureOpsRoutes(ops, handler)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 2)
+
+	// Always scope to localhost:<port>
+	go func() { errCh <- webhook.Start(fmt.Sprintf("localhost:%d", port)) }()
+
+	// Expose healthz/readyz/metrics endpoints publicly
+	go func() { errCh <- ops.Start(fmt.Sprintf(":%d", defaultHealthzPort)) }()
+
+	exitCode := 0
+	select {
+	case err = <-errCh:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server error: %v", err)
+			exitCode = 1
+		}
+	case <-ctx.Done():
+		log.Println("shutdown signal received")
 	}
+	stop()
+
+	// Allow in-flight requests to drain before K8s sends SIGKILL (default 30s grace).
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	if err := webhook.Shutdown(shutdownCtx); err != nil {
+		log.Printf("webhook shutdown error: %v", err)
+	}
+	if err := ops.Shutdown(shutdownCtx); err != nil {
+		log.Printf("ops shutdown error: %v", err)
+	}
+	os.Exit(exitCode)
 }
 
 func getStartPort() (int, error) {

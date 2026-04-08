@@ -55,9 +55,9 @@ spec:
         image: "{{ .Values.rackspaceWebhook.image.repository }}:{{ .Values.rackspaceWebhook.image.tag | default .Chart.Version }}"
         imagePullPolicy: {{ .Values.rackspaceWebhook.image.pullPolicy }}
         ports:
-        - name: http
+        - name: http-webhook
           protocol: TCP
-          containerPort: 8888
+          containerPort: 8080
         livenessProbe:
           {{- toYaml .Values.rackspaceWebhook.livenessProbe | nindent 10 }}
         readinessProbe:
