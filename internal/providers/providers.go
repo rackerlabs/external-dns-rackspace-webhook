@@ -223,10 +223,24 @@ func convertRecordToEndpoint(record records.RecordList, domainName string) *endp
 			log.Warn("Failed to unmarshal TXT record labels", "name", record.Name, "comment", record.Comment, "error", err)
 		}
 	}
+	// Rackspace returns names without a trailing dot, but AdjustEndpoints
+	// canonicalizes all names with one. Without this, external-dns sees a
+	// diff between Records() and AdjustEndpoints() on every sync cycle,
+	// causing constant create/update/delete churn.
+	dnsName := strings.TrimSuffix(strings.ToLower(record.Name), ".") + "."
+
+	data := record.Data
+	// Rackspace stores SRV priority as a separate API field rather than
+	// inline in the data string. Reassemble into the "priority weight port
+	// target" format that external-dns expects.
+	if record.Type == "SRV" {
+		data = fmt.Sprintf("%d %s", record.Priority, record.Data)
+	}
+
 	ep := &endpoint.Endpoint{
-		DNSName:    record.Name,
+		DNSName:    dnsName,
 		RecordType: record.Type,
-		Targets:    []string{record.Data},
+		Targets:    []string{data},
 		RecordTTL:  endpoint.TTL(record.TTL),
 		Labels:     labels,
 	}
