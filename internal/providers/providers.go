@@ -129,7 +129,9 @@ func authenticateAndCreateClient(ctx context.Context, authProvider AuthProvider,
 }
 
 func (p *RackspaceProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, error) {
-	var endpoints []*endpoint.Endpoint
+	// Rackspace stores one target per record. external-dns expects one
+	// endpoint per name+type with all targets merged.
+	merged := map[string]*endpoint.Endpoint{}
 	opts := domains.ListOpts{}
 	pager := p.getClient(ctx).ListDomains(ctx, opts)
 	start := time.Now()
@@ -151,7 +153,12 @@ func (p *RackspaceProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 				}
 				for _, record := range recordList {
 					if ep := convertRecordToEndpoint(record, domain.Name); ep != nil {
-						endpoints = append(endpoints, ep)
+						key := ep.DNSName + "/" + ep.RecordType
+						if existing, ok := merged[key]; ok {
+							existing.Targets = append(existing.Targets, ep.Targets...)
+						} else {
+							merged[key] = ep
+						}
 					}
 				}
 				return true, nil
@@ -162,6 +169,11 @@ func (p *RackspaceProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 		}
 		return true, nil
 	})
+
+	endpoints := make([]*endpoint.Endpoint, 0, len(merged))
+	for _, ep := range merged {
+		endpoints = append(endpoints, ep)
+	}
 	log.Debug("Fetched records", "count", len(endpoints), "elapsed", time.Since(start))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch domains: %w", err)
@@ -217,17 +229,14 @@ func convertRecordToEndpoint(record records.RecordList, domainName string) *endp
 	if record.Type == "NS" || record.Type == "SOA" {
 		return nil
 	}
+	// Comments may contain JSON labels (from external-dns) or plain text
+	// (from other tools). Only attempt to parse if it looks like JSON.
 	var labels map[string]string
-	if record.Type == "TXT" && record.Comment != "" {
+	if record.Type == "TXT" && record.Comment != "" && record.Comment[0] == '{' {
 		if err := json.Unmarshal([]byte(record.Comment), &labels); err != nil {
 			log.Warn("Failed to unmarshal TXT record labels", "name", record.Name, "comment", record.Comment, "error", err)
 		}
 	}
-	// Rackspace returns names without a trailing dot, but AdjustEndpoints
-	// canonicalizes all names with one. Without this, external-dns sees a
-	// diff between Records() and AdjustEndpoints() on every sync cycle,
-	// causing constant create/update/delete churn.
-	dnsName := strings.TrimSuffix(strings.ToLower(record.Name), ".") + "."
 
 	data := record.Data
 	// Rackspace stores SRV priority as a separate API field rather than
@@ -237,14 +246,13 @@ func convertRecordToEndpoint(record records.RecordList, domainName string) *endp
 		data = fmt.Sprintf("%d %s", record.Priority, record.Data)
 	}
 
-	ep := &endpoint.Endpoint{
-		DNSName:    dnsName,
+	return &endpoint.Endpoint{
+		DNSName:    record.Name,
 		RecordType: record.Type,
 		Targets:    []string{data},
 		RecordTTL:  endpoint.TTL(record.TTL),
 		Labels:     labels,
 	}
-	return ep
 }
 
 func (p *RackspaceProvider) createRecord(ctx context.Context, ep *endpoint.Endpoint) error {
