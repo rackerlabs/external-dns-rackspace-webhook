@@ -57,7 +57,7 @@ func TestConvertRecordToEndpoint_SRVFormat(t *testing.T) {
 				Name: "_mongodb._tcp.myrs.example.com", Type: "SRV",
 				Data: "0 27017 node1.example.com", TTL: 300, Priority: 10,
 			},
-			wantTarget: "10 0 27017 node1.example.com",
+			wantTarget: "10 0 27017 node1.example.com.",
 		},
 		{
 			name: "zero priority",
@@ -65,7 +65,7 @@ func TestConvertRecordToEndpoint_SRVFormat(t *testing.T) {
 				Name: "_sip._tcp.svc.example.com", Type: "SRV",
 				Data: "5 5060 sip.example.com", TTL: 300, Priority: 0,
 			},
-			wantTarget: "0 5 5060 sip.example.com",
+			wantTarget: "0 5 5060 sip.example.com.",
 		},
 		{
 			name: "high priority value",
@@ -73,7 +73,7 @@ func TestConvertRecordToEndpoint_SRVFormat(t *testing.T) {
 				Name: "_http._tcp.web.example.com", Type: "SRV",
 				Data: "1 443 web.example.com", TTL: 300, Priority: 100,
 			},
-			wantTarget: "100 1 443 web.example.com",
+			wantTarget: "100 1 443 web.example.com.",
 		},
 	}
 

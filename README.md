@@ -201,6 +201,14 @@ docker build -t external-dns-rackspace-webhook .
 3. **Permission Denied**: Check that your API key has DNS management permissions
 4. **TTL Too Low**: The webhook enforces a minimum TTL of 300 seconds
 
+### external-dns Compatibility (SRV Records)
+
+SRV record support requires external-dns v0.21.0 or later:
+
+- **Versions prior to 0.21** do not include SRV in the TXT registry's `getSupportedTypes()`. This prevents the registry from matching `srv-` prefixed TXT ownership records to their SRV data records, causing all SRV records to appear unowned. external-dns will not update or delete them.
+
+- **Version 0.21.0** fixes the ownership matching but introduces contradictory SRV validation in the CRD source. The CRD validator rejects targets with a trailing dot, while `ValidateSRVRecord` requires one per RFC 2782. This makes it impossible to create SRV records via DNSEndpoint CRDs. See [kubernetes-sigs/external-dns#6357](https://github.com/kubernetes-sigs/external-dns/issues/6357) and the fix in [PR #6383](https://github.com/kubernetes-sigs/external-dns/pull/6383).
+
 ### Debug Mode
 
 Enable debug logging by setting `LOG_LEVEL` in your values file:

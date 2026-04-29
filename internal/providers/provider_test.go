@@ -2,7 +2,9 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -282,7 +284,7 @@ func TestRackspaceProvider_createRecord(t *testing.T) {
 			endpoint: &endpoint.Endpoint{
 				DNSName:    "_sip._tcp.example.com",
 				RecordType: "SRV",
-				Targets:    []string{"1 5 5060 _sip._tcp.example.com."},
+				Targets:    []string{"1 5 5060 sipserver.example.com"},
 				RecordTTL:  endpoint.TTL(3600),
 				Labels:     map[string]string{},
 			},
@@ -330,6 +332,28 @@ func TestRackspaceProvider_createRecord(t *testing.T) {
 			th.Mux.HandleFunc("/domains/123456/records", func(w http.ResponseWriter, r *http.Request) {
 				th.TestMethod(t, r, "POST")
 				th.TestHeader(t, r, "X-Auth-Token", "cbc36478b0bd8e67e89469c7749d4127")
+
+				if !tt.wantErr {
+					body, _ := io.ReadAll(r.Body)
+					var payload map[string]interface{}
+					if err := json.Unmarshal(body, &payload); err != nil {
+						t.Fatalf("failed to parse request body: %v", err)
+					}
+					recs, _ := payload["records"].([]interface{})
+					if len(recs) > 0 {
+						rec := recs[0].(map[string]interface{})
+						if data, ok := rec["data"].(string); ok {
+							if data != "5 5060 sipserver.example.com" {
+								t.Errorf("SRV data = %q, want %q", data, "5 5060 sipserver.example.com")
+							}
+						}
+						if priority, ok := rec["priority"].(float64); ok {
+							if priority != 1 {
+								t.Errorf("SRV priority = %v, want 1", priority)
+							}
+						}
+					}
+				}
 
 				w.Header().Add("Content-Type", "application/json")
 				w.WriteHeader(http.StatusCreated)

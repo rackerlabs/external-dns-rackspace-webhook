@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/labstack/echo/v4"
@@ -37,17 +38,27 @@ func (h *Handler) HandleGetRecords(c echo.Context) error {
 	return c.JSON(http.StatusOK, endpoints)
 }
 
-// HandleAdjustEndpoints returns endpoints unchanged. Rackspace does not
-// require any provider-specific canonicalization. Transforming endpoints
-// here (adding trailing dots, modifying TTL, stripping TXT quotes) caused
-// mismatches with what Records() returns and with the TXT registry's
-// internal representation, leading to constant update churn.
+// HandleAdjustEndpoints normalises provider-specific endpoint details.
+// For SRV records, RFC 2782 requires the target host to be an absolute
+// FQDN (trailing dot).  Sources that omit the dot would be rejected by
+// external-dns's ValidateSRVRecord, so we append it here as a safety net.
 func (h *Handler) HandleAdjustEndpoints(c echo.Context) error {
 	defer c.Request().Body.Close()
 	var endpoints []*endpoint.Endpoint
 	if err := json.NewDecoder(c.Request().Body).Decode(&endpoints); err != nil {
 		log.Error("Failed to decode input", "error", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	for _, ep := range endpoints {
+		if ep.RecordType == "SRV" {
+			for i, target := range ep.Targets {
+				parts := strings.SplitN(target, " ", 4)
+				if len(parts) == 4 && !strings.HasSuffix(parts[3], ".") {
+					ep.Targets[i] = parts[0] + " " + parts[1] + " " + parts[2] + " " + parts[3] + "."
+				}
+			}
+		}
 	}
 
 	log.Info("POST /adjustendpoints", "count", len(endpoints))
