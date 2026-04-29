@@ -244,6 +244,14 @@ func convertRecordToEndpoint(record records.RecordList, domainName string) *endp
 	// target" format that external-dns expects.
 	if record.Type == "SRV" {
 		data = fmt.Sprintf("%d %s", record.Priority, record.Data)
+		// Ensure the target host ends with a dot (RFC 2782) so that the
+		// value returned here matches what adjustEndpoints produces for
+		// the desired endpoints.  Without this trailing dot external-dns
+		// ≥ 0.21 rejects the record as invalid.
+		parts := strings.SplitN(data, " ", 4)
+		if len(parts) == 4 && !strings.HasSuffix(parts[3], ".") {
+			data = parts[0] + " " + parts[1] + " " + parts[2] + " " + parts[3] + "."
+		}
 	}
 
 	return &endpoint.Endpoint{
@@ -288,7 +296,7 @@ func (p *RackspaceProvider) createRecord(ctx context.Context, ep *endpoint.Endpo
 				return err
 			}
 			createOpts.Priority = uint(priority)
-			createOpts.Data = fmt.Sprintf("%s %s %s", parts[1], parts[2], fqdn)
+			createOpts.Data = fmt.Sprintf("%s %s %s", parts[1], parts[2], strings.TrimSuffix(parts[3], "."))
 		}
 
 		if _, err := p.getClient(ctx).CreateRecord(ctx, domain.ID, createOpts); err != nil {
