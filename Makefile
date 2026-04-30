@@ -30,9 +30,6 @@ clean:
 test:
 	$(GOTEST) -v ./...
 
-e2e:
-	./test/e2e/run.sh
-
 # Download dependencies
 deps:
 	$(GOMOD) download
@@ -85,4 +82,4 @@ deploy:
 
 # Remove from Kubernetes
 undeploy:
-	kubectl delete -f manifests/
+	kubectl delete -f manifests
