@@ -50,6 +50,12 @@ The chart deploys:
 - Customizable container security contexts for restricted permissions.
 - Support for `noop` registry to disable TXT record management.
 
+### Policy and ownership quick guide
+
+Use `--policy=upsert-only` when you want ExternalDNS to create and update records but leave deletes to humans. Use `--policy=sync` when Kubernetes should remove DNS records after the source object is deleted.
+
+For production, prefer `--registry=txt` with a stable `--txt-owner-id` and a prefix such as `--txt-prefix=external-dns-`. TXT ownership lets multiple clusters or tools share a Rackspace zone safely. Use `--registry=noop` only for short-lived tests or tightly controlled zones, especially if `sync` is enabled.
+
 ## Configuration
 
 The chart is highly configurable via the `values.yaml` file. Below is a table of all configurable options, followed by examples of overriding key values.
@@ -62,7 +68,7 @@ The chart is highly configurable via the `values.yaml` file. Below is a table of
 | `domainFilter` | string | `example.com` | Domain to filter DNS records (e.g., `example.com`). |
 | `externalDns.enabled` | bool | `true` | Enable or disable the ExternalDNS deployment. |
 | `externalDns.image.repository` | string | `registry.k8s.io/external-dns/external-dns` | ExternalDNS container image repository. |
-| `externalDns.image.tag` | string | `v0.18.0` | ExternalDNS container image tag. |
+| `externalDns.image.tag` | string | `v0.21.0` | ExternalDNS container image tag. |
 | `externalDns.image.pullPolicy` | string | `IfNotPresent` | Image pull policy for ExternalDNS. |
 | `externalDns.replicas` | int | `1` | Number of ExternalDNS replicas. |
 | `externalDns.serviceAccount.create` | bool | `true` | Create a ServiceAccount for ExternalDNS. |

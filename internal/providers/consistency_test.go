@@ -185,16 +185,16 @@ func TestConvertRecordToEndpoint_TXTLabels(t *testing.T) {
 }
 
 func TestRecords_MergesMultipleTargets(t *testing.T) {
-	th.SetupHTTP()
-	defer th.TeardownHTTP()
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
 
-	th.Mux.HandleFunc("/domains", func(w http.ResponseWriter, r *http.Request) {
+	fakeServer.Mux.HandleFunc("/domains", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"domains":[{"id":"111","name":"example.com"}]}`)
+		_, _ = fmt.Fprint(w, `{"domains":[{"id":"111","name":"example.com"}]}`)
 	})
-	th.Mux.HandleFunc("/domains/111/records", func(w http.ResponseWriter, r *http.Request) {
+	fakeServer.Mux.HandleFunc("/domains/111/records", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"records":[
+		_, _ = fmt.Fprint(w, `{"records":[
 			{"id":"r1","name":"multi.example.com","type":"A","data":"10.0.0.1","ttl":300},
 			{"id":"r2","name":"multi.example.com","type":"A","data":"10.0.0.2","ttl":300},
 			{"id":"r3","name":"multi.example.com","type":"A","data":"10.0.0.3","ttl":300},
@@ -202,7 +202,7 @@ func TestRecords_MergesMultipleTargets(t *testing.T) {
 		]}`)
 	})
 
-	p := newTestProvider(t)
+	p := newTestProvider(t, fakeServer.Endpoint())
 	eps, err := p.Records(context.Background())
 	if err != nil {
 		t.Fatalf("Records() error: %v", err)
@@ -226,23 +226,23 @@ func TestRecords_MergesMultipleTargets(t *testing.T) {
 }
 
 func TestRecords_FiltersNSAndSOA(t *testing.T) {
-	th.SetupHTTP()
-	defer th.TeardownHTTP()
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
 
-	th.Mux.HandleFunc("/domains", func(w http.ResponseWriter, r *http.Request) {
+	fakeServer.Mux.HandleFunc("/domains", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"domains":[{"id":"111","name":"example.com"}]}`)
+		_, _ = fmt.Fprint(w, `{"domains":[{"id":"111","name":"example.com"}]}`)
 	})
-	th.Mux.HandleFunc("/domains/111/records", func(w http.ResponseWriter, r *http.Request) {
+	fakeServer.Mux.HandleFunc("/domains/111/records", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"records":[
+		_, _ = fmt.Fprint(w, `{"records":[
 			{"id":"r1","name":"example.com","type":"NS","data":"ns1.example.com","ttl":3600},
 			{"id":"r2","name":"example.com","type":"SOA","data":"ns1.example.com admin.example.com","ttl":3600},
 			{"id":"r3","name":"myhost.example.com","type":"A","data":"10.0.0.1","ttl":300}
 		]}`)
 	})
 
-	p := newTestProvider(t)
+	p := newTestProvider(t, fakeServer.Endpoint())
 	eps, err := p.Records(context.Background())
 	if err != nil {
 		t.Fatalf("Records() error: %v", err)
@@ -270,14 +270,14 @@ func TestApplyChanges_DryRun(t *testing.T) {
 	}
 }
 
-func newTestProvider(t *testing.T) *RackspaceProvider {
+func newTestProvider(t *testing.T, serviceEndpoint string) *RackspaceProvider {
 	t.Helper()
 	return &RackspaceProvider{
-		serviceClient: NewRackspaceDNSClient(FakeDNSClient()),
+		serviceClient: NewRackspaceDNSClient(FakeDNSClient(serviceEndpoint)),
 		authProvider:  NewRackspaceAuthProvider(),
 		tokenExpiry:   time.Now().Add(24 * time.Hour),
 		config: &RackspaceConfig{
-			IdentityEndpoint: th.Endpoint(),
+			IdentityEndpoint: serviceEndpoint,
 			Username:         "test",
 			APIKey:           "test",
 		},

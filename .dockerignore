@@ -1,0 +1,10 @@
+.git
+.idea
+.kiro
+.vscode
+dist
+tmp
+vendor
+*.test
+*.out
+.DS_Store
