@@ -6,13 +6,14 @@ PLATFORMS=linux/amd64,linux/arm64
 
 # Go parameters
 GOCMD=go
-GOBUILD=$(GOCMD) build
+GOFLAGS?=-mod=mod
+GOBUILD=$(GOCMD) build $(GOFLAGS)
 GOCLEAN=$(GOCMD) clean
-GOTEST=$(GOCMD) test
+GOTEST=$(GOCMD) test $(GOFLAGS)
 GOGET=$(GOCMD) get
 GOMOD=$(GOCMD) mod
 
-.PHONY: all build clean test deps docker-build docker-push help
+.PHONY: all build clean test e2e deps docker-build docker-push help
 
 all: test build
 
@@ -28,6 +29,9 @@ clean:
 # Run tests
 test:
 	$(GOTEST) -v ./...
+
+e2e:
+	./test/e2e/run.sh
 
 # Download dependencies
 deps:
@@ -64,7 +68,7 @@ fmt:
 
 # Lint code
 lint:
-	golangci-lint run
+	GOFLAGS=$(GOFLAGS) golangci-lint run
 
 # Security scan
 security:
@@ -81,4 +85,4 @@ deploy:
 
 # Remove from Kubernetes
 undeploy:
-	kubectl delete -f manif
+	kubectl delete -f manifests/

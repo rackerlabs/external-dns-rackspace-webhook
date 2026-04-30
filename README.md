@@ -53,7 +53,7 @@ provider:
   webhook:
     image:
       repository: ghcr.io/rackerlabs/external-dns-rackspace-webhook
-      tag: v0.2.2
+      tag: v0.3.1
     env:
       - name: RACKSPACE_USERNAME
         valueFrom:
@@ -145,6 +145,31 @@ See the [external-dns chart documentation](https://kubernetes-sigs.github.io/ext
 | `resources` | CPU/memory limits for the external-dns container |
 | `provider.webhook.resources` | CPU/memory limits for the webhook sidecar |
 
+### Choosing policy and TXT flags
+
+Start with these defaults unless you have a reason to change them:
+
+```yaml
+policy: upsert-only
+registry: txt
+txtOwnerId: my-cluster-prod
+txtPrefix: external-dns-
+```
+
+| Flag | Use it when | Notes |
+|------|-------------|-------|
+| `--domain-filter=example.com` | Always | Keeps external-dns away from domains this install should not manage. |
+| `--policy=upsert-only` | First install, testing, or any zone where deletes must be manual | Creates and updates records, but does not delete records when Kubernetes objects disappear. |
+| `--policy=sync` | You want external-dns to remove stale records automatically | Use only with a tight `domain-filter` and a stable ownership registry. This is what removes old records. |
+| `--registry=txt` | Production or any shared Rackspace zone | Creates TXT ownership records so external-dns only changes records owned by this install. |
+| `--txt-owner-id=<id>` | Any time `registry=txt` is enabled | Pick one stable value per cluster/environment. Changing it makes existing records look unowned. |
+| `--txt-prefix=external-dns-` | Recommended with TXT registry | Keeps ownership records separate from user TXT records and supports CNAME ownership cleanly. |
+| `--registry=noop` | Short-lived tests where ownership records are unwanted | Pair with `upsert-only` unless you are intentionally managing every matching record. |
+| `--source=service,ingress,...` | To choose what Kubernetes objects create DNS | Use only the sources you actually need. Fewer sources are easier to reason about. |
+| `--interval=1m` or higher | Normal reconciliation | Short intervals are useful in tests; production usually does not need sub-minute polling. |
+
+Use `sync` when Kubernetes should be the source of truth for the selected domain. Use `upsert-only` when DNS deletion needs a human review step. Use TXT ownership in production; use `noop` only when you deliberately do not want ownership records.
+
 ## Development
 
 ### Building
@@ -158,6 +183,9 @@ make docker-build
 
 # Run tests
 make test
+
+# Run Kubernetes e2e tests against OrbStack/current kubectl context
+make e2e
 ```
 
 ### Running Locally
@@ -169,12 +197,23 @@ export DOMAIN_FILTER="example.com"
 make run
 ```
 
+### End-to-end testing
+
+`make e2e` builds the webhook image, starts a mock Rackspace Identity/Cloud DNS API in Kubernetes, and runs ExternalDNS against the webhook in the current `kubectl` context. It is designed for OrbStack and also works with any cluster that can run locally built Docker images.
+
+The e2e test covers:
+
+- `upsert-only` with `noop` registry: creates records and confirms source deletion does not remove DNS.
+- `sync` with `txt` registry, `--txt-owner-id`, and `--txt-prefix`: creates records, removes seeded older owned records, and removes records after the source is deleted.
+
+Requirements: Docker, `kubectl`, `curl`, and `jq`.
+
 ## API Endpoints
 
 - `GET /` - Negotiation endpoint (returns domain filter)
 - `GET /records` - Retrieve all DNS records
 - `POST /records` - Apply DNS record changes
-- `POST /adjustEndpoints` - Normalize and validate endpoints
+- `POST /adjustendpoints` - Normalize and validate endpoints
 - `GET /healthz` - Health check endpoint
 
 ## Docker

@@ -15,10 +15,10 @@ import (
 	th "github.com/gophercloud/gophercloud/v2/testhelper"
 )
 
-func FakeDNSClient() *gophercloud.ServiceClient {
+func FakeDNSClient(endpoint string) *gophercloud.ServiceClient {
 	return &gophercloud.ServiceClient{
 		ProviderClient: &gophercloud.ProviderClient{TokenID: "cbc36478b0bd8e67e89469c7749d4127"},
-		Endpoint:       th.Endpoint(),
+		Endpoint:       endpoint,
 	}
 }
 
@@ -219,25 +219,25 @@ func TestRackspaceProvider_findDomain(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			th.SetupHTTP()
-			defer th.TeardownHTTP()
+			fakeServer := th.SetupHTTP()
+			defer fakeServer.Teardown()
 
 			// Mock the domains list API response
-			th.Mux.HandleFunc("/domains", func(w http.ResponseWriter, r *http.Request) {
+			fakeServer.Mux.HandleFunc("/domains", func(w http.ResponseWriter, r *http.Request) {
 				th.TestMethod(t, r, "GET")
 				th.TestHeader(t, r, "X-Auth-Token", "cbc36478b0bd8e67e89469c7749d4127")
 
 				w.Header().Add("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, tt.mockResponse)
+				_, _ = fmt.Fprint(w, tt.mockResponse)
 			})
 
 			p := &RackspaceProvider{
-				serviceClient: NewRackspaceDNSClient(FakeDNSClient()),
+				serviceClient: NewRackspaceDNSClient(FakeDNSClient(fakeServer.Endpoint())),
 				authProvider:  NewRackspaceAuthProvider(),
 				tokenExpiry:   time.Now().Add(24 * time.Hour), // Set token to not expire during test
 				config: &RackspaceConfig{
-					IdentityEndpoint: th.Endpoint(),
+					IdentityEndpoint: fakeServer.Endpoint(),
 					Username:         "test",
 					APIKey:           "test",
 				},
@@ -305,17 +305,17 @@ func TestRackspaceProvider_createRecord(t *testing.T) {
 	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
-			th.SetupHTTP()
-			defer th.TeardownHTTP()
+			fakeServer := th.SetupHTTP()
+			defer fakeServer.Teardown()
 
 			// Mock the domains list API response
-			th.Mux.HandleFunc("/domains", func(w http.ResponseWriter, r *http.Request) {
+			fakeServer.Mux.HandleFunc("/domains", func(w http.ResponseWriter, r *http.Request) {
 				th.TestMethod(t, r, "GET")
 				th.TestHeader(t, r, "X-Auth-Token", "cbc36478b0bd8e67e89469c7749d4127")
 
 				w.Header().Add("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, `{
+				_, _ = fmt.Fprint(w, `{
 					"domains": [
 						{
 							"id": "123456",
@@ -329,7 +329,7 @@ func TestRackspaceProvider_createRecord(t *testing.T) {
 				}`)
 			})
 
-			th.Mux.HandleFunc("/domains/123456/records", func(w http.ResponseWriter, r *http.Request) {
+			fakeServer.Mux.HandleFunc("/domains/123456/records", func(w http.ResponseWriter, r *http.Request) {
 				th.TestMethod(t, r, "POST")
 				th.TestHeader(t, r, "X-Auth-Token", "cbc36478b0bd8e67e89469c7749d4127")
 
@@ -357,8 +357,8 @@ func TestRackspaceProvider_createRecord(t *testing.T) {
 
 				w.Header().Add("Content-Type", "application/json")
 				w.WriteHeader(http.StatusCreated)
-				fmt.Fprint(w, `{
-					"callbackUrl": "`+th.Endpoint()+`callback",
+				_, _ = fmt.Fprint(w, `{
+					"callbackUrl": "`+fakeServer.Endpoint()+`callback",
 					"domains": [
 						{
 							"name": "_sip._tcp.example.com.",
@@ -378,13 +378,13 @@ func TestRackspaceProvider_createRecord(t *testing.T) {
 				}`)
 			})
 
-			th.Mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+			fakeServer.Mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 				th.TestMethod(t, r, "GET")
 				th.TestHeader(t, r, "X-Auth-Token", "cbc36478b0bd8e67e89469c7749d4127")
 
 				w.Header().Add("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, `{
+				_, _ = fmt.Fprint(w, `{
 					"status": "COMPLETED",
 					"response": {
 									"records": [
@@ -399,11 +399,11 @@ func TestRackspaceProvider_createRecord(t *testing.T) {
 			})
 
 			p := &RackspaceProvider{
-				serviceClient: NewRackspaceDNSClient(FakeDNSClient()),
+				serviceClient: NewRackspaceDNSClient(FakeDNSClient(fakeServer.Endpoint())),
 				authProvider:  NewRackspaceAuthProvider(),
 				tokenExpiry:   time.Now().Add(24 * time.Hour), // Set token to not expire during test
 				config: &RackspaceConfig{
-					IdentityEndpoint: th.Endpoint(),
+					IdentityEndpoint: fakeServer.Endpoint(),
 					Username:         "test",
 					APIKey:           "test",
 				},

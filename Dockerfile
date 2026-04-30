@@ -1,4 +1,4 @@
-FROM golang:1.24 AS builder
+FROM golang:1.26.2 AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -10,4 +10,3 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o external-dns-rack
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder /app/external-dns-rackspace-webhook /opt/external-dns-rackspace-webhook
 ENTRYPOINT ["/opt/external-dns-rackspace-webhook"]
-
