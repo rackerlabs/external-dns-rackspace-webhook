@@ -4,11 +4,11 @@ A webhook provider for [External DNS](https://github.com/kubernetes-sigs/externa
 
 ## Overview
 
-This webhook integrates External DNS with Rackspace Cloud DNS, allowing Kubernetes services and ingresses to automatically create, update, and delete DNS records in your Rackspace-managed domains.
+This webhook integrates External DNS with Rackspace Cloud DNS, allowing Kubernetes services, ingresses, and Gateway API routes to automatically create, update, and delete DNS records in your Rackspace-managed domains.
 
 ## Features
 
-- **Automatic DNS Management**: Creates and manages DNS records based on Kubernetes services and ingresses
+- **Automatic DNS Management**: Creates and manages DNS records based on Kubernetes services, ingresses, and Gateway API routes
 - **Multiple Record Types**: Supports A, AAAA, CNAME, TXT, and other standard DNS record types
 - **Domain Filtering**: Configure which domains the webhook should manage
 - **TTL Management**: Configurable TTL values with automatic normalization (minimum 300s)
@@ -24,7 +24,7 @@ This webhook integrates External DNS with Rackspace Cloud DNS, allowing Kubernet
 
 ## Installation
 
-The recommended installation method uses the official [external-dns Helm chart](https://kubernetes-sigs.github.io/external-dns/) from the kubernetes-sigs project, with this webhook running as a sidecar container.
+Use the official [external-dns Helm chart](https://kubernetes-sigs.github.io/external-dns/) from the kubernetes-sigs project, with this webhook running as a sidecar container. This repository publishes the Rackspace webhook image only; it no longer ships or releases a custom Helm chart.
 
 ### 1. Add the external-dns Helm repository
 
@@ -53,7 +53,7 @@ provider:
   webhook:
     image:
       repository: ghcr.io/rackerlabs/external-dns-rackspace-webhook
-      tag: v0.3.1
+      tag: 0.3.1
     env:
       - name: RACKSPACE_USERNAME
         valueFrom:
@@ -69,8 +69,10 @@ provider:
         value: info
       - name: DRY_RUN
         value: "false"
+      - name: DOMAIN_FILTER
+        value: example.com
     service:
-      port: 8888
+      port: 8080
     livenessProbe:
       httpGet:
         path: /healthz
@@ -87,19 +89,51 @@ provider:
       periodSeconds: 10
       timeoutSeconds: 5
       failureThreshold: 6
+    securityContext:
+      capabilities:
+        drop:
+          - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 65534
 
 sources:
   - service
   - ingress
+  - gateway-httproute
+  - gateway-tlsroute
+  - gateway-tcproute
+  - gateway-udproute
+
+extraArgs:
+  webhook-provider-url: http://localhost:8888
 
 domainFilters:
   - example.com   # replace with your domain(s)
 
 policy: upsert-only
+registry: noop
+interval: 10m
 logLevel: info
 ```
 
-> **Note**: `service.port: 8888` must match the webhook's `PORT` env var (default `8888`). The chart uses this value to configure `--webhook-provider-url` automatically and to route health probe traffic.
+> **Note**: the Rackspace webhook exposes the provider API on `localhost:8888` by default and exposes health checks on container port `8080`. Keep `extraArgs.webhook-provider-url` pointed at `http://localhost:8888`; the `provider.webhook.service.port` value is for the chart-managed Service and health/metrics path.
+
+For multiple managed DNS suffixes, keep the webhook `DOMAIN_FILTER` and external-dns `domainFilters` aligned:
+
+```yaml
+provider:
+  webhook:
+    env:
+      - name: DOMAIN_FILTER
+        value: example.com,iad3.example.com
+
+domainFilters:
+  - example.com
+  - iad3.example.com
+```
+
+The example keeps `policy: upsert-only` and `registry: noop`, which means source removal does not automatically delete DNS records. Use `policy: sync` with a stable TXT registry configuration only when Kubernetes should be the deletion source of truth.
 
 ### 4. Install
 
