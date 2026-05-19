@@ -166,7 +166,7 @@ spec:
         ports:
         - name: http-webhook
           protocol: TCP
-          containerPort: 8888
+          containerPort: 8080
         livenessProbe:
           failureThreshold: 2
           httpGet:
